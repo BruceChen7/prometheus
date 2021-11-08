@@ -465,6 +465,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
+	// 最小有效时间
 	h.minValidTime.Store(minValidTime)
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
@@ -472,6 +473,7 @@ func (h *Head) Init(minValidTime int64) error {
 		// Loading of m-mapped chunks and snapshot can make the mint of the Head
 		// to go below minValidTime.
 		if h.MinTime() < h.minValidTime.Load() {
+			// 设置为最小的有效时间
 			h.minTime.Store(h.minValidTime.Load())
 		}
 	}()
@@ -516,11 +518,13 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
+	// 重放WAL
 	level.Info(h.logger).Log("msg", "Replaying WAL, this may take a while")
 
 	checkpointReplayStart := time.Now()
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
+	// 找不到上一次的checkpoint
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}

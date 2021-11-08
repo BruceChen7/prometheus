@@ -33,6 +33,7 @@ func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, er
 }
 
 // Index returns an IndexReader against the block.
+// 返回一个range
 func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
