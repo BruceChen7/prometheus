@@ -49,13 +49,16 @@ var ErrNotFound = errors.New("not found")
 // RefSeries is the series labels with the series ID.
 type RefSeries struct {
 	Ref    chunks.HeadSeriesRef
+	// 多个label
 	Labels labels.Labels
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
 type RefSample struct {
 	Ref chunks.HeadSeriesRef
+	// 时间
 	T   int64
+	// 值
 	V   float64
 }
 

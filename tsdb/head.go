@@ -64,6 +64,7 @@ type Head struct {
 	lastMemoryTruncationTime atomic.Int64
 	lastSeriesID             atomic.Uint64
 
+	// 统计head
 	metrics         *headMetrics
 	opts            *HeadOptions
 	wal             *wal.WAL
@@ -165,6 +166,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	// 每个head的chunk的的范围
 	if opts.ChunkRange < 1 {
 		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
@@ -192,15 +194,18 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		stats: stats,
 		reg:   r,
 	}
+	// 初始化zhuangtai
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
 	h.metrics = newHeadMetrics(h, r)
 
 	if opts.ChunkPool == nil {
+		// 获取一个chunk pool
 		opts.ChunkPool = chunkenc.NewPool()
 	}
 
+	// 返回一个chunk writer
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
@@ -609,6 +614,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, error) {
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
+	// 获取所有的chunk
 	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
@@ -1592,7 +1598,9 @@ func (h *Head) Size() int64 {
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
+	// chunk的size
 	cdmSize, _ := h.chunkDiskMapper.Size()
+	// wal的size
 	return walSize + cdmSize
 }
 

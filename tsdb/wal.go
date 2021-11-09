@@ -151,8 +151,10 @@ func newCRC32() hash.Hash32 {
 // DEPRECATED: use wal pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
+	// 用于统计
 	metrics *walMetrics
 
+	// 目录文件
 	dirFile *os.File
 	files   []*segmentFile
 
@@ -160,6 +162,7 @@ type SegmentWAL struct {
 	flushInterval time.Duration
 	segmentSize   int64
 
+	// crc校验
 	crc32 hash.Hash32
 	cur   *bufio.Writer
 	curN  int64
@@ -451,6 +454,7 @@ func (w *SegmentWAL) LogSeries(series []record.RefSeries) error {
 
 // LogSamples writes a batch of new samples to the log.
 func (w *SegmentWAL) LogSamples(samples []record.RefSample) error {
+	// 获取当前的缓冲区
 	buf := w.getBuffer()
 
 	flag := w.encodeSamples(buf, samples)
