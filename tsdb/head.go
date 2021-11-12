@@ -640,6 +640,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 		}
 
+		// 统计相关
 		h.metrics.chunks.Inc()
 		h.metrics.chunksCreated.Inc()
 		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
@@ -677,6 +678,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error, refSeries map[chunks.Head
 	mmappedChunks, err := h.loadMmappedChunks(refSeries)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed, discarding chunk files completely", "err", err)
+		// 返回一个空的
 		mmappedChunks = map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	}
 

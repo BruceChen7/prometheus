@@ -56,6 +56,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 )
 
+// prometheus tool 入口
 func main() {
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))

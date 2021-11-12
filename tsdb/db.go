@@ -826,6 +826,7 @@ func (db *DB) run() {
 			if db.autoCompact {
 				if err := db.Compact(); err != nil {
 					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
+					// 指数退让
 					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
 				} else {
 					backoff = 0

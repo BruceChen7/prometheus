@@ -30,6 +30,7 @@ func CopyDirs(src, dest string) error {
 	if err := os.MkdirAll(dest, 0o777); err != nil {
 		return err
 	}
+	// 获取所有的文件
 	files, err := readDirs(src)
 	if err != nil {
 		return err
@@ -46,12 +47,14 @@ func CopyDirs(src, dest string) error {
 
 		// Empty directories are also created.
 		if stat.IsDir() {
+			// 创建目录
 			if err := os.MkdirAll(dp, 0o777); err != nil {
 				return err
 			}
 			continue
 		}
 
+		// 拷贝文件
 		if err := copyFile(sp, dp); err != nil {
 			return err
 		}

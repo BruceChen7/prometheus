@@ -257,6 +257,23 @@ func (w *Writer) cut() error {
 	return nil
 }
 
+// ┌──────────────────────────────┐
+// │  magic(0x0130BC91) <4 byte>  │
+// ├──────────────────────────────┤
+// │    version(1) <1 byte>       │
+// ├──────────────────────────────┤
+// │    padding(0) <3 byte>       │
+// ├──────────────────────────────┤
+// │ ┌──────────────────────────┐ │
+// │ │         Chunk 1          │ │
+// │ ├──────────────────────────┤ │
+// │ │          ...             │ │
+// │ ├──────────────────────────┤ │
+// │ │         Chunk N          │ │
+// │ └──────────────────────────┘ │
+// └──────────────────────────────┘
+
+// head chunk on disk format
 func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
@@ -279,6 +296,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		}
 	}()
 	if allocSize > 0 {
+		// 用来创建指定文件大小的文件
 		if err = fileutil.Preallocate(f, allocSize, true); err != nil {
 			return 0, nil, 0, errors.Wrap(err, "preallocate")
 		}
@@ -289,7 +307,9 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 
 	// Write header metadata for new file.
 	metab := make([]byte, SegmentHeaderSize)
+	// 首先写入一个魔数字
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], magicNumber)
+	// 第5个字节写入chunk的编码方式
 	metab[4] = chunksFormat
 
 	n, err := f.Write(metab)
@@ -310,6 +330,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, errors.Wrap(err, "open final file")
 	}
 	// Skip header for further writes.
+	// 将文件指针进行偏移
 	if _, err := f.Seek(int64(n), 0); err != nil {
 		return 0, nil, 0, errors.Wrap(err, "seek in final file")
 	}

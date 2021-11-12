@@ -2903,6 +2903,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 			require.NoError(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 		}()
 		require.NoError(t, os.Mkdir(outDir, os.ModePerm))
+		// copy files 
 		require.NoError(t, fileutil.CopyDirs(dbDir, outDir))
 	}
 	{

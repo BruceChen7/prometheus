@@ -73,6 +73,7 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 
 	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
+		// 找到大于指定的checkpoints
 		if checkpoint.index >= maxIndex {
 			break
 		}
@@ -81,6 +82,7 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 	return errs.Err()
 }
 
+// 默认的checkpoint的开头
 const checkpointPrefix = "checkpoint."
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
@@ -295,11 +297,15 @@ func checkpointDir(dir string, i int) string {
 }
 
 type checkpointRef struct {
+	// 名字
 	name  string
+	// 和index
 	index int
 }
 
+// 获取当前的checkpoints
 func listCheckpoints(dir string) (refs []checkpointRef, err error) {
+	// 获取当前目录中的文件
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -307,12 +313,14 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 
 	for i := 0; i < len(files); i++ {
 		fi := files[i]
+		// 没有不是相关checkpoint的文件，直接过滤
 		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
 			continue
 		}
 		if !fi.IsDir() {
 			return nil, errors.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
+		// 获取inex
 		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
 		if err != nil {
 			continue
@@ -322,6 +330,7 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 	}
 
 	sort.Slice(refs, func(i, j int) bool {
+		// 进行排序
 		return refs[i].index < refs[j].index
 	})
 

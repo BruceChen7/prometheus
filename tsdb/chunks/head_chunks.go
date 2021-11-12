@@ -78,6 +78,7 @@ func newChunkDiskMapperRef(seq, offset uint64) ChunkDiskMapperRef {
 }
 
 func (ref ChunkDiskMapperRef) Unpack() (sgmIndex, chkStart int) {
+	// 取低32和高32位
 	sgmIndex = int(ref >> 32)
 	chkStart = int((ref << 32) >> 32)
 	return sgmIndex, chkStart
@@ -107,6 +108,7 @@ type ChunkDiskMapper struct {
 	curFileSequence int      // Index of current open file being appended to.
 	curFileMaxt     int64    // Used for the size retention.
 
+	// chunk header 数据
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
 	crc32        hash.Hash
@@ -114,6 +116,7 @@ type ChunkDiskMapper struct {
 
 	/// Reader.
 	// The int key in the map is the file number on the disk.
+	// 通过引用来保留mmapped 文件
 	mmappedChunkFiles map[int]*mmappedChunkFile // Contains the m-mapped files for each chunk file mapped with its index.
 	closers           map[int]io.Closer         // Closers for resources behind the byte slices.
 	readPathMtx       sync.RWMutex              // Mutex used to protect the above 2 maps.
@@ -285,6 +288,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 // WriteChunk writes the chunk to the disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
+// 返回chunk的引用
 func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk) (chkRef ChunkDiskMapperRef, err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
@@ -310,7 +314,15 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	cdm.crc32.Reset()
 	bytesWritten := 0
 
+	// 写的是索引块，而不是磁盘块
+	// 具体见
+	// https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/head_chunks.md
+	// 一个是文件号，另一个是大小
 	chkRef = newChunkDiskMapperRef(uint64(cdm.curFileSequence), uint64(cdm.curFileSize()))
+
+	// ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
+        // | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
+        // └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(seriesRef))
 	bytesWritten += SeriesRefSize
@@ -318,14 +330,19 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	bytesWritten += MintMaxtSize
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(maxt))
 	bytesWritten += MintMaxtSize
+	// 写入编码类型
 	cdm.byteBuf[bytesWritten] = byte(chk.Encoding())
 	bytesWritten += ChunkEncodingSize
+	// 写入数据长度
 	n := binary.PutUvarint(cdm.byteBuf[bytesWritten:], uint64(len(chk.Bytes())))
 	bytesWritten += n
 
+	// 刷到文件中
 	if err := cdm.writeAndAppendToCRC32(cdm.byteBuf[:bytesWritten]); err != nil {
 		return 0, err
 	}
+
+	// 写下数据和数据的CRC
 	if err := cdm.writeAndAppendToCRC32(chk.Bytes()); err != nil {
 		return 0, err
 	}
@@ -337,8 +354,10 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 		cdm.curFileMaxt = maxt
 	}
 
+	// 写下对应的引用，chkRef是key
 	cdm.chunkBuffer.put(chkRef, chk)
 
+	// chunk数据头 + 数据本身的大小
 	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
 		// The chunk was bigger than the buffer itself.
 		// Flushing to not keep partial chunks in buffer.
@@ -373,6 +392,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		return err
 	}
 
+	// 新建一个head chunk file
 	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
 	if err != nil {
 		return err
@@ -385,25 +405,30 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		}
 	}()
 
+	// 当前文件已经占用的文件大小
 	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
+		// 计入当前的引用
 		cdm.mmappedChunkFiles[cdm.curFileSequence].maxt = cdm.curFileMaxt
 		cdm.readPathMtx.Unlock()
 	}
 
+	// 是哟你mmap来映射磁盘文件到内存中
 	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), MaxHeadChunkFileSize)
 	if err != nil {
 		return err
 	}
 
 	cdm.readPathMtx.Lock()
+	// 记录当前的head chuak文件序列号
 	cdm.curFileSequence = seq
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
 	} else {
+	       // 新创建一个带有缓冲写的的
 		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
@@ -436,14 +461,17 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
+	// 添加当前文件的大小
 	cdm.curFileNumBytes.Add(int64(n))
 	return err
 }
 
 func (cdm *ChunkDiskMapper) writeAndAppendToCRC32(b []byte) error {
+	// 输入到文件中
 	if err := cdm.write(b); err != nil {
 		return err
 	}
+	// 写下校验和
 	_, err := cdm.crc32.Write(b)
 	return err
 }
@@ -455,6 +483,7 @@ func (cdm *ChunkDiskMapper) writeCRC32() error {
 // flushBuffer flushes the current in-memory chunks.
 // Assumes that writePathMtx is _write_ locked before calling this method.
 func (cdm *ChunkDiskMapper) flushBuffer() error {
+	// 用来刷到磁盘中
 	if err := cdm.chkWriter.Flush(); err != nil {
 		return err
 	}

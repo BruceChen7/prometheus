@@ -268,6 +268,7 @@ func validateOptions(opts *Options) *Options {
 	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}
+	// 使用默认的截断频率
 	if opts.TruncateFrequency <= 0 {
 		opts.TruncateFrequency = DefaultTruncateFrequency
 	}
@@ -284,6 +285,7 @@ func validateOptions(opts *Options) *Options {
 	return opts
 }
 
+// 重放WAL，用来数据恢复
 func (db *DB) replayWAL() error {
 	level.Info(db.logger).Log("msg", "replaying WAL, this may take a while", "dir", db.wal.Dir())
 	start := time.Now()

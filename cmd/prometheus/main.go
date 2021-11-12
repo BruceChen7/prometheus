@@ -203,6 +203,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 	return nil
 }
 
+// 程序的入口
 func main() {
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
@@ -930,6 +931,7 @@ func main() {
 					}
 				}
 
+				// 打开一个db
 				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")

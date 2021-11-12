@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
+// 加载wal
 func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
