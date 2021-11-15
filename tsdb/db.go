@@ -749,6 +749,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
+	// 请求header恢复
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)

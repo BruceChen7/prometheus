@@ -1067,6 +1067,7 @@ func main() {
 }
 
 func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
+	// 打开db
 	db, err := tsdb.Open(
 		dir,
 		log.With(logger, "component", "tsdb"),

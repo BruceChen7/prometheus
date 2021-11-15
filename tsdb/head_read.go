@@ -240,6 +240,7 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkRead
 
 type headChunkReader struct {
 	head       *Head
+	// 最小时间, 和最大时间
 	mint, maxt int64
 	isoState   *isolationState
 }

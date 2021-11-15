@@ -416,7 +416,7 @@ func (h *Head) processWALSamples(
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
-			// 重新生成chuank
+			// 重新生成chunk
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -506,10 +506,15 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 		csr.lset[i].Value = dec.UvarintStr()
 	}
 
+
+	// ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
+	// | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
+	// └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 	csr.chunkRange = dec.Be64int64()
 	if dec.Uvarint() == 0 {
 		return
 	}
+
 
 	// 初始化memChunk
 	csr.mc = &memChunk{}
@@ -521,6 +526,7 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 	enc := chunkenc.Encoding(dec.Byte())
 
 	// The underlying bytes gets re-used later, so make a copy.
+	// 长度
 	chunkBytes := dec.UvarintBytes()
 	chunkBytesCopy := make([]byte, len(chunkBytes))
 	// 剩余的拷贝出来
@@ -908,16 +914,21 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
+				// 建立其内存的mem
 				series, _, err := h.getOrCreateWithID(csr.ref, csr.lset.Hash(), csr.lset)
+				// 找不到，直接失败
 				if err != nil {
 					errChan <- err
 					return
 				}
+				// 记录下当前的series
 				localRefSeries[csr.ref] = series
 				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < series.ref {
+					// 最大的series id更
 					h.lastSeriesID.Store(uint64(series.ref))
 				}
 
+				// 当前chunk的id
 				series.chunkRange = csr.chunkRange
 				if csr.mc == nil {
 					continue
@@ -936,11 +947,13 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.app = app
 
+				// 更新head chuank对应的最小时间和最大时间
 				h.updateMinMaxTime(csr.mc.minTime, csr.mc.maxTime)
 			}
 		}(i, recordChan)
 	}
 
+	// 存放的是wal的格式
 	r := wal.NewReader(sr)
 	var loopErr error
 Outer:

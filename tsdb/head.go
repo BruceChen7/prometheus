@@ -1246,6 +1246,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 }
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
+	// 当前的seri找的到吗
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
 		return newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool)
 	})
