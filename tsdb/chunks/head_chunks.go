@@ -108,7 +108,7 @@ type ChunkDiskMapper struct {
 	curFileSequence int      // Index of current open file being appended to.
 	curFileMaxt     int64    // Used for the size retention.
 
-	// chunk header 数据
+	// header chunk 数据
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
 	crc32        hash.Hash
@@ -118,9 +118,10 @@ type ChunkDiskMapper struct {
 	// The int key in the map is the file number on the disk.
 	// 通过引用来保留mmapped 文件
 	mmappedChunkFiles map[int]*mmappedChunkFile // Contains the m-mapped files for each chunk file mapped with its index.
-	closers           map[int]io.Closer         // Closers for resources behind the byte slices.
-	readPathMtx       sync.RWMutex              // Mutex used to protect the above 2 maps.
-	pool              chunkenc.Pool             // This is used when fetching a chunk from the disk to allocate a chunk.
+	// 记录当前需要close的资源
+	closers     map[int]io.Closer // Closers for resources behind the byte slices.
+	readPathMtx sync.RWMutex      // Mutex used to protect the above 2 maps.
+	pool        chunkenc.Pool     // This is used when fetching a chunk from the disk to allocate a chunk.
 
 	// Writer and Reader.
 	// We flush chunks to disk in batches. Hence, we store them in this buffer
@@ -148,10 +149,12 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
 		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
 	}
+	// 没有对齐
 	if writeBufferSize%1024 != 0 {
 		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
 	}
 
+	// 创建目录
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
@@ -160,6 +163,7 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 		return nil, err
 	}
 
+	// 初始化一个结构体
 	m := &ChunkDiskMapper{
 		dir:             dirFile,
 		pool:            pool,
@@ -187,6 +191,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		}
 	}()
 
+	// 获取当前chunk目录下的文件
 	files, err := listChunkFiles(cdm.dir.Name())
 	if err != nil {
 		return err
@@ -321,8 +326,8 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	chkRef = newChunkDiskMapperRef(uint64(cdm.curFileSequence), uint64(cdm.curFileSize()))
 
 	// ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
-        // | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
-        // └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
+	// | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
+	// └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(seriesRef))
 	bytesWritten += SeriesRefSize
@@ -401,6 +406,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
 		if returnErr != nil {
+			// 返回的错误
 			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
 		}
 	}()
@@ -428,7 +434,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
 	} else {
-	       // 新创建一个带有缓冲写的的
+		// 新创建一个带有缓冲写的的
 		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
@@ -758,6 +764,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	errs := tsdb_errors.NewMulti()
 	// Cut a new file only if the current file has some chunks.
+	// 说明当前文件有数据
 	if cdm.curFileSize() > HeadChunkFileHeaderSize {
 		errs.Add(cdm.CutNewFile())
 	}
@@ -826,6 +833,7 @@ func (cdm *ChunkDiskMapper) Close() error {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 	cdm.readPathMtx.Lock()
+
 	defer cdm.readPathMtx.Unlock()
 
 	if cdm.closed {

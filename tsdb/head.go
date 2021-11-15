@@ -67,6 +67,7 @@ type Head struct {
 	// 统计head
 	metrics         *headMetrics
 	opts            *HeadOptions
+	// wal
 	wal             *wal.WAL
 	exemplarMetrics *ExemplarMetrics
 	exemplars       ExemplarStorage
@@ -166,10 +167,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	// 每个head的chunk的的范围
+	// 每个head包含的chuank值部队
 	if opts.ChunkRange < 1 {
 		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
+	// 回调
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
@@ -186,18 +188,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		wal:    wal,
 		logger: l,
 		opts:   opts,
+		// 每个mem chunk的池
 		memChunkPool: sync.Pool{
 			New: func() interface{} {
+				// 用来生成一个chunk
 				return &memChunk{}
 			},
 		},
 		stats: stats,
 		reg:   r,
 	}
-	// 初始化zhuangtai
+	// 初始化统计
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
+	// 用来统计head metrics
 	h.metrics = newHeadMetrics(h, r)
 
 	if opts.ChunkPool == nil {
@@ -245,6 +250,7 @@ func (h *Head) resetInMemoryState() error {
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
+	// 当前最小截断的时间
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.lastMemoryTruncationTime.Store(math.MinInt64)
 	return nil
@@ -487,6 +493,7 @@ func (h *Head) Init(minValidTime int64) error {
 	start := time.Now()
 
 	snapIdx, snapOffset := -1, 0
+	// series
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
 	if h.opts.EnableMemorySnapshotOnShutdown {
@@ -502,6 +509,7 @@ func (h *Head) Init(minValidTime int64) error {
 				return err
 			}
 		}
+		// chunk snapshot
 		level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", time.Since(start).String())
 	}
 
@@ -540,6 +548,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(e, "finding WAL segments")
 	}
 
+	// 开始重放wal
 	h.startWALReplayStatus(startFrom, endAt)
 
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
@@ -602,6 +611,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	walReplayDuration := time.Since(start)
 	h.metrics.walTotalReplayDuration.Set(walReplayDuration.Seconds())
+	// 打印重的时长
 	level.Info(h.logger).Log(
 		"msg", "WAL replay completed",
 		"checkpoint_replay_duration", checkpointReplayDuration.String(),
@@ -909,9 +919,11 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
+	//已经截断了
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
+	// 更新
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
@@ -1400,6 +1412,7 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 	return deleted, rmChunks, actualMint
 }
 
+// 获取内存中的series
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
 	i := uint64(id) & uint64(s.size-1)
 
@@ -1476,8 +1489,10 @@ func (s sample) V() float64                        { return s.v }
 type memSeries struct {
 	sync.RWMutex
 
+	// 引用id
 	ref           chunks.HeadSeriesRef
 	lset          labels.Labels
+	// 对应mmap磁盘中的chunk
 	mmappedChunks []*mmappedChunk
 	mmMaxTime     int64 // Max time of any mmapped chunk, only used during WAL replay.
 	headChunk     *memChunk
@@ -1595,6 +1610,7 @@ func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil
 func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
 func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
 
+// 获取head的size
 func (h *Head) Size() int64 {
 	var walSize int64
 	if h.wal != nil {

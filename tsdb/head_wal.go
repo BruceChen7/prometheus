@@ -88,6 +88,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		}
 	)
 
+	// 回收资源
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wal.CorruptionErr)
@@ -103,11 +104,13 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	}()
 
 	wg.Add(n)
+	// 多个goroutine同时处理
 	for i := 0; i < n; i++ {
 		outputs[i] = make(chan []record.RefSample, 300)
 		inputs[i] = make(chan []record.RefSample, 300)
 
 		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
+			// 处理sample，有几个sample是非法的,这里的非法是找不到对应series
 			unknown := h.processWALSamples(h.minValidTime.Load(), input, output)
 			unknownRefs.Add(unknown)
 			wg.Done()
@@ -141,8 +144,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	go func() {
 		defer close(decoded)
 		for r.Next() {
+			// 获取一条记录
 			rec := r.Record()
 			switch dec.Type(rec) {
+			// 是一条series
 			case record.Series:
 				series := seriesPool.Get().([]record.RefSeries)[:0]
 				series, err = dec.Series(rec, series)
@@ -201,6 +206,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
+
+		// series 记录
 		case []record.RefSeries:
 			for _, walSeries := range v {
 				mSeries, created, err := h.getOrCreateWithID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels)
@@ -217,6 +224,7 @@ Outer:
 
 				if created {
 					// This is the first WAL series record for this series.
+					// 记录该series
 					h.setMMappedChunks(mSeries, mmc)
 					continue
 				}
@@ -394,17 +402,21 @@ func (h *Head) processWALSamples(
 
 	for samples := range input {
 		for _, s := range samples {
+			// 时间无效
 			if s.T < minValidTime {
 				continue
 			}
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
+				// 找不到相关的series
 				unknownRefs++
 				continue
 			}
+			// 已经mmap了，不应该放到内存的head中
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
+			// 重新生成chuank
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -416,6 +428,7 @@ func (h *Head) processWALSamples(
 				mint = s.T
 			}
 		}
+		// 用来给别的地方使用
 		output <- samples
 	}
 	h.updateMinMaxTime(mint, maxt)
@@ -424,7 +437,9 @@ func (h *Head) processWALSamples(
 }
 
 const (
+	// series 类型的数据
 	chunkSnapshotRecordTypeSeries     uint8 = 1
+	// 墓碑数据
 	chunkSnapshotRecordTypeTombstones uint8 = 2
 	chunkSnapshotRecordTypeExemplars  uint8 = 3
 )
@@ -470,17 +485,23 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 }
 
 func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error) {
+	// 用来解析
 	dec := encoding.Decbuf{B: b}
 
+	// 获取第一个字节
 	if flag := dec.Byte(); flag != chunkSnapshotRecordTypeSeries {
 		return csr, errors.Errorf("invalid record type %x", flag)
 	}
 
+	// 获取8个字节的id
 	csr.ref = chunks.HeadSeriesRef(dec.Be64())
 
 	// The label set written to the disk is already sorted.
+	// 获取长度
 	csr.lset = make(labels.Labels, dec.Uvarint())
+	// 获取label name 和label value
 	for i := range csr.lset {
+		// 获取labels
 		csr.lset[i].Name = dec.UvarintStr()
 		csr.lset[i].Value = dec.UvarintStr()
 	}
@@ -490,16 +511,22 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 		return
 	}
 
+	// 初始化memChunk
 	csr.mc = &memChunk{}
+	// 最小时间
 	csr.mc.minTime = dec.Be64int64()
+	// 最大时间
 	csr.mc.maxTime = dec.Be64int64()
+	// 第一位是编码格式
 	enc := chunkenc.Encoding(dec.Byte())
 
 	// The underlying bytes gets re-used later, so make a copy.
 	chunkBytes := dec.UvarintBytes()
 	chunkBytesCopy := make([]byte, len(chunkBytes))
+	// 剩余的拷贝出来
 	copy(chunkBytesCopy, chunkBytes)
 
+	// 形成一个chunk
 	chk, err := chunkenc.FromData(enc, chunkBytesCopy)
 	if err != nil {
 		return csr, errors.Wrap(err, "chunk from data")
@@ -507,11 +534,14 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 	csr.mc.chunk = chk
 
 	for i := range csr.sampleBuf {
+		// sample的时间
 		csr.sampleBuf[i].t = dec.Be64int64()
+		// 值
 		csr.sampleBuf[i].v = dec.Be64Float64()
 	}
 
 	err = dec.Err()
+	// 如果还有剩余，这条record不太对
 	if err != nil && len(dec.B) > 0 {
 		err = errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
@@ -735,7 +765,9 @@ type ChunkSnapshotStats struct {
 
 // LastChunkSnapshot returns the directory name and index of the most recent chunk snapshot.
 // If dir does not contain any chunk snapshots, ErrNotFound is returned.
+// 获取最大的idx和offset
 func LastChunkSnapshot(dir string) (string, int, int, error) {
+	// 获取dir 中的文件
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return "", 0, 0, err
@@ -745,28 +777,34 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 	for i := 0; i < len(files); i++ {
 		fi := files[i]
 
+		// 非shapshot文件
 		if !strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
 			continue
 		}
+		// 不是目录
 		if !fi.IsDir() {
 			return "", 0, 0, errors.Errorf("chunk snapshot %s is not a directory", fi.Name())
 		}
 
 		splits := strings.Split(fi.Name()[len(chunkSnapshotPrefix):], ".")
+		// split 2 段
 		if len(splits) != 2 {
 			return "", 0, 0, errors.Errorf("chunk snapshot %s is not in the right format", fi.Name())
 		}
 
+		// id
 		idx, err := strconv.Atoi(splits[0])
 		if err != nil {
 			continue
 		}
 
+		// offset
 		offset, err := strconv.Atoi(splits[1])
 		if err != nil {
 			continue
 		}
 
+		// 获取maxidx 和offset
 		if idx > maxIdx || (idx == maxIdx && offset > maxOffset) {
 			maxIdx, maxOffset = idx, offset
 			maxFileName = filepath.Join(dir, fi.Name())
@@ -775,6 +813,7 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 	if maxFileName == "" {
 		return "", 0, 0, record.ErrNotFound
 	}
+	// 最新的文件名
 	return maxFileName, maxIdx, maxOffset, nil
 }
 
@@ -819,15 +858,18 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
 func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
+	// 最新的chunk
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if err == record.ErrNotFound {
+			// 没有找到
 			return snapIdx, snapOffset, nil, nil
 		}
 		return snapIdx, snapOffset, nil, errors.Wrap(err, "find last chunk snapshot")
 	}
 
 	start := time.Now()
+	// 创建reader
 	sr, err := wal.NewSegmentsReader(dir)
 	if err != nil {
 		return snapIdx, snapOffset, nil, errors.Wrap(err, "open chunk snapshot")
@@ -902,6 +944,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 	r := wal.NewReader(sr)
 	var loopErr error
 Outer:
+        // 获取一页
 	for r.Next() {
 		select {
 		case err := <-errChan:
@@ -912,6 +955,7 @@ Outer:
 
 		rec := r.Record()
 		switch rec[0] {
+		// 如果是series 类型
 		case chunkSnapshotRecordTypeSeries:
 			numSeries++
 			csr, err := decodeSeriesFromChunkSnapshot(rec)
@@ -919,6 +963,7 @@ Outer:
 				loopErr = errors.Wrap(err, "decode series record")
 				break Outer
 			}
+			// 得到一条record
 			recordChan <- csr
 
 		case chunkSnapshotRecordTypeTombstones:

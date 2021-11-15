@@ -205,6 +205,7 @@ func (r *LiveReader) buildRecord() (bool, error) {
 			return false, err
 		}
 		if rt == recLast || rt == recFull {
+			// 下一个record 的index为0
 			r.index = 0
 			if compressed && len(r.snappyBuf) > 0 {
 				// The snappy library uses `len` to calculate if we need a new buffer.
@@ -230,22 +231,23 @@ func (r *LiveReader) buildRecord() (bool, error) {
 // instead of a recLast or recMiddle we would have an invalid record.
 func validateRecord(typ recType, i int) error {
 	switch typ {
-	case recFull:
+	// 一整条记录，包含在一个分段中
+	case recFull: // a full record encoded in a single fragment
 		if i != 0 {
 			return errors.New("unexpected full record")
 		}
 		return nil
-	case recFirst:
+	case recFirst://  first fragment of a record
 		if i != 0 {
 			return errors.New("unexpected first record, dropping buffer")
 		}
 		return nil
-	case recMiddle:
+	case recMiddle: // middle fragment of a record
 		if i == 0 {
 			return errors.New("unexpected middle record, dropping buffer")
 		}
 		return nil
-	case recLast:
+	case recLast: // final fragment of a record
 		if i == 0 {
 			return errors.New("unexpected last record, dropping buffer")
 		}

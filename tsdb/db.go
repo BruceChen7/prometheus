@@ -768,6 +768,7 @@ func removeBestEffortTmpDirs(l log.Logger, dir string) error {
 		return err
 	}
 	for _, fi := range files {
+		// 如果是临时的
 		if isTmpBlockDir(fi) {
 			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
 				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, fi.Name()), "err", err)
@@ -1731,13 +1732,17 @@ func isBlockDir(fi os.FileInfo) bool {
 
 // isTmpBlockDir returns dir that consists of block dir ULID and tmp extension.
 func isTmpBlockDir(fi os.FileInfo) bool {
+	// 不是目录
 	if !fi.IsDir() {
 		return false
 	}
 
 	fn := fi.Name()
+	// 扩展名信息不对
 	ext := filepath.Ext(fn)
+	// 扩展名称
 	if ext == tmpForDeletionBlockDirSuffix || ext == tmpForCreationBlockDirSuffix || ext == tmpLegacy {
+		// 生成的ulid是否合法
 		if _, err := ulid.ParseStrict(fn[:len(fn)-len(ext)]); err == nil {
 			return true
 		}
@@ -1745,6 +1750,7 @@ func isTmpBlockDir(fi os.FileInfo) bool {
 	return false
 }
 
+// 获取blockDirs文件列表
 func blockDirs(dir string) ([]string, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -1760,6 +1766,7 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
+// 获取sequenceFiles 文件
 func sequenceFiles(dir string) ([]string, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {

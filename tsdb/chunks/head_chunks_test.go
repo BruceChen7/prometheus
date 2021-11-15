@@ -418,6 +418,7 @@ func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	})
 
+	// 获取一个chunk
 	hrw, err := NewChunkDiskMapper(tmpdir, chunkenc.NewPool(), DefaultWriteBufferSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)

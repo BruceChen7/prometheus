@@ -59,13 +59,16 @@ type page struct {
 }
 
 func (p *page) remaining() int {
+	// 剩余size
 	return pageSize - p.alloc
 }
 
 func (p *page) full() bool {
+	// 少于7个
 	return pageSize-p.alloc < recordHeaderSize
 }
 
+// reset
 func (p *page) reset() {
 	for i := range p.buf {
 		p.buf[i] = 0
@@ -85,8 +88,11 @@ type SegmentFile interface {
 
 // Segment represents a segment file.
 type Segment struct {
+	// 文件描述
 	SegmentFile
+	// 目录
 	dir string
+	// index 号
 	i   int
 }
 
@@ -144,6 +150,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 
 // CreateSegment creates a new segment k in dir.
 func CreateSegment(dir string, k int) (*Segment, error) {
+	// 文件创建
 	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return nil, err
@@ -157,6 +164,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	if err != nil {
 		return nil, errors.New("not a valid filename")
 	}
+	// 打开os.File
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err
@@ -289,6 +297,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		writeSegmentIndex = last + 1
 	}
 
+	// segment文件
 	segment, err := CreateSegment(w.Dir(), writeSegmentIndex)
 	if err != nil {
 		return nil, err
@@ -815,11 +824,14 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		if err != nil {
 			continue
 		}
+		// 获取引用
 		refs = append(refs, segmentRef{name: fn, index: k})
 	}
+	// 排序
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
 	})
+	// 不连续
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {
 			return nil, errors.New("segments are not sequential")
@@ -845,6 +857,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	var segs []*Segment
 
 	for _, sgmRange := range sr {
+		// 获取所有的segment文件
 		refs, err := listSegments(sgmRange.Dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "list segment in dir:%v", sgmRange.Dir)
@@ -857,6 +870,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			if sgmRange.Last >= 0 && r.index > sgmRange.Last {
 				break
 			}
+			// 在范围中的segment文件
 			s, err := OpenReadSegment(filepath.Join(sgmRange.Dir, r.name))
 			if err != nil {
 				return nil, errors.Wrapf(err, "open segment:%v in dir:%v", r.name, sgmRange.Dir)
@@ -883,6 +897,7 @@ type segmentBufReader struct {
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
+		// 一系列的文件
 		segs: segs,
 	}
 }

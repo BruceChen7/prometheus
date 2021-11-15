@@ -369,6 +369,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 	go func() {
 		defer close(decoded)
 		for r.Next() {
+			// 获取一条记录
 			rec := r.Record()
 			switch dec.Type(rec) {
 			case record.Series:

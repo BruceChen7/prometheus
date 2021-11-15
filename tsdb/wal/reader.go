@@ -43,6 +43,7 @@ func NewReader(r io.Reader) *Reader {
 // It must not be called again after it returned false.
 func (r *Reader) Next() bool {
 	err := r.next()
+	// 读取最后了
 	if errors.Cause(err) == io.EOF {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
@@ -60,18 +61,23 @@ func (r *Reader) next() (err error) {
 	// We have to use r.buf since allocating byte arrays here fails escape
 	// analysis and ends up on the heap, even though it seemingly should not.
 	hdr := r.buf[:recordHeaderSize]
+	// 数据部分
 	buf := r.buf[recordHeaderSize:]
 
+	// 清空
 	r.rec = r.rec[:0]
+	// snappy算法
 	r.snappyBuf = r.snappyBuf[:0]
 
 	i := 0
 	for {
+		// 获取第一个字节
 		if _, err = io.ReadFull(r.rdr, hdr[:1]); err != nil {
 			return errors.Wrap(err, "read first header byte")
 		}
 		r.total++
 		r.curRecTyp = recTypeFromHeader(hdr[0])
+		// 是否被压缩
 		compressed := hdr[0]&snappyMask != 0
 
 		// Gobble up zero bytes.
@@ -101,39 +107,52 @@ func (r *Reader) next() (err error) {
 			}
 			continue
 		}
+
+		// 剩下的部分
 		n, err := io.ReadFull(r.rdr, hdr[1:])
 		if err != nil {
 			return errors.Wrap(err, "read remaining header")
 		}
+		// 整个读取真正的数据
 		r.total += int64(n)
 
 		var (
+			// 长度, 2个字节
 			length = binary.BigEndian.Uint16(hdr[1:])
+			// crc, 4个字节
 			crc    = binary.BigEndian.Uint32(hdr[3:])
 		)
 
+		// 记录的record 大于 一页
 		if length > pageSize-recordHeaderSize {
 			return errors.Errorf("invalid record size %d", length)
 		}
+		// 读取数据部分
 		n, err = io.ReadFull(r.rdr, buf[:length])
 		if err != nil {
 			return err
 		}
+		// 真正读取部分
 		r.total += int64(n)
 
 		if n != int(length) {
 			return errors.Errorf("invalid size: expected %d, got %d", length, n)
 		}
+		// 计算数据的hash值
 		if c := crc32.Checksum(buf[:length], castagnoliTable); c != crc {
 			return errors.Errorf("unexpected checksum %x, expected %x", c, crc)
 		}
 
 		if compressed {
+			// 压缩过
 			r.snappyBuf = append(r.snappyBuf, buf[:length]...)
 		} else {
+			// 数据部分
 			r.rec = append(r.rec, buf[:length]...)
 		}
 
+		// 开始验证数据部分
+		// 数据type的类型
 		if err := validateRecord(r.curRecTyp, i); err != nil {
 			return err
 		}

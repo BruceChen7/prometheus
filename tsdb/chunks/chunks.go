@@ -596,6 +596,7 @@ func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
 	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
 }
 
+// 获取下一个文件名称
 func nextSequenceFile(dir string) (string, int, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -611,13 +612,16 @@ func nextSequenceFile(dir string) (string, int, error) {
 		// It is not necessary that we find the files in number order,
 		// for example with '1000000' and '200000', '1000000' would come first.
 		// Though this is a very very race case, we check anyway for the max id.
+		// 找到最大的index
 		if j > i {
 			i = j
 		}
 	}
+	// 获取文件的名称
 	return segmentFile(dir, int(i+1)), int(i + 1), nil
 }
 
+// 用来生成文件的名称
 func segmentFile(baseDir string, index int) string {
 	return filepath.Join(baseDir, fmt.Sprintf("%0.6d", index))
 }
