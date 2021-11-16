@@ -48,7 +48,7 @@ var ErrNotFound = errors.New("not found")
 
 // RefSeries is the series labels with the series ID.
 type RefSeries struct {
-	Ref    chunks.HeadSeriesRef
+	Ref chunks.HeadSeriesRef
 	// 多个label
 	Labels labels.Labels
 }
@@ -57,9 +57,9 @@ type RefSeries struct {
 type RefSample struct {
 	Ref chunks.HeadSeriesRef
 	// 时间
-	T   int64
+	T int64
 	// 值
-	V   float64
+	V float64
 }
 
 // RefExemplar is an exemplar with it's labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
@@ -91,12 +91,31 @@ func (d *Decoder) Type(rec []byte) Type {
 func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	dec := encoding.Decbuf{B: rec}
 
+	// record类型不是series
 	if Type(dec.Byte()) != Series {
 		return nil, errors.New("invalid record type")
 	}
+
+	// ┌────────────────────────────────────────────┐
+	// │ type = 1 <1b>                              │
+	// ├────────────────────────────────────────────┤
+	// │ ┌─────────┬──────────────────────────────┐ │
+	// │ │ id <8b> │ n = len(labels) <uvarint>    │ │
+	// │ ├─────────┴────────────┬─────────────────┤ │
+	// │ │ len(str_1) <uvarint> │ str_1 <bytes>   │ │
+	// │ ├──────────────────────┴─────────────────┤ │
+	// │ │  ...                                   │ │
+	// │ ├───────────────────────┬────────────────┤ │
+	// │ │ len(str_2n) <uvarint> │ str_2n <bytes> │ │
+	// │ └───────────────────────┴────────────────┘ │
+	// │                  . . .                     │
+	// └────────────────────────────────────────────┘
+
 	for len(dec.B) > 0 && dec.Err() == nil {
+		// 获取该series 的id
 		ref := storage.SeriesRef(dec.Be64())
 
+		// 几个label
 		lset := make(labels.Labels, dec.Uvarint())
 
 		for i := range lset {
@@ -106,6 +125,8 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		sort.Sort(lset)
 
 		series = append(series, RefSeries{
+			// 生成一个headchuank ref
+			// HeadChunkRef packs a HeadSeriesRef and a ChunkID into a global 8 Byte ID.
 			Ref:    chunks.HeadSeriesRef(ref),
 			Labels: lset,
 		})
@@ -113,6 +134,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	if dec.Err() != nil {
 		return nil, dec.Err()
 	}
+	// 还剩余数据
 	if len(dec.B) > 0 {
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
@@ -120,28 +142,36 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 }
 
 // Samples appends samples in rec to the given slice.
+// 解析
 func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 	dec := encoding.Decbuf{B: rec}
 
+	// 类型不对
 	if Type(dec.Byte()) != Samples {
 		return nil, errors.New("invalid record type")
 	}
+	// sample的个数
 	if dec.Len() == 0 {
 		return samples, nil
 	}
 	var (
-		baseRef  = dec.Be64()
+		// base id
+		baseRef = dec.Be64()
+		// base 时间
 		baseTime = dec.Be64int64()
 	)
+	// 一直到byte没有
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
 		dtime := dec.Varint64()
 		val := dec.Be64()
 
 		samples = append(samples, RefSample{
+			// series id号
 			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
-			T:   baseTime + dtime,
-			V:   math.Float64frombits(val),
+			// 时间和值
+			T: baseTime + dtime,
+			V: math.Float64frombits(val),
 		})
 	}
 
@@ -231,10 +261,13 @@ type Encoder struct{}
 
 // Series appends the encoded series to b and returns the resulting slice.
 func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
+	// buffer
 	buf := encoding.Encbuf{B: b}
+	// 设置type
 	buf.PutByte(byte(Series))
 
 	for _, s := range series {
+		// 设置series id
 		buf.PutBE64(uint64(s.Ref))
 		buf.PutUvarint(len(s.Labels))
 
@@ -243,6 +276,7 @@ func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 			buf.PutUvarintStr(l.Value)
 		}
 	}
+	// 获取序列化后的byte
 	return buf.Get()
 }
 

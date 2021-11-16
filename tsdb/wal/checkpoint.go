@@ -50,6 +50,7 @@ type CheckpointStats struct {
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
+// WAL目录中有checkpoint目录
 func LastCheckpoint(dir string) (string, int, error) {
 	checkpoints, err := listCheckpoints(dir)
 	if err != nil {
@@ -97,25 +98,30 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
+	// 创建segment
 	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
 		var sgmRange []SegmentRange
+		// 获取最新的chekpoint dir
 		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != record.ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
 		}
 		last := idx + 1
 		if err == nil {
+			// 不能超过上次merge的index
 			if from > last {
 				return nil, fmt.Errorf("unexpected gap to last checkpoint. expected:%v, requested:%v", last, from)
 			}
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
 			from = last
 
+			// dir 目录
 			sgmRange = append(sgmRange, SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
+		// 获取当前wal的文件列表
 		sgmRange = append(sgmRange, SegmentRange{Dir: w.Dir(), First: from, Last: to})
 		sgmReader, err = NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
@@ -124,16 +130,21 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		defer sgmReader.Close()
 	}
 
+	// 获取目录
 	cpdir := checkpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
+	// 删除之前的临时目录
 	if err := os.RemoveAll(cpdirtmp); err != nil {
 		return nil, errors.Wrap(err, "remove previous temporary checkpoint dir")
 	}
 
+	// 创建目录
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
+
+	// new 一个新的wal
 	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
@@ -141,7 +152,9 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 
 	// Ensures that an early return caused by an error doesn't leave any tmp files.
 	defer func() {
+		// 关闭当前wal
 		cp.Close()
+		// 移除临时文件
 		os.RemoveAll(cpdirtmp)
 	}()
 
@@ -164,28 +177,37 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		// before writing them to the checkpoint.
 		// Remember where the record for this iteration starts.
 		start := len(buf)
+		// 获取当前的一条record
 		rec := r.Record()
 
+		// 获取最新的record相应的类型
 		switch dec.Type(rec) {
 		case record.Series:
+			// 如果是series
 			series, err = dec.Series(rec, series)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode series")
 			}
 			// Drop irrelevant series in place.
+			// 原地记录
 			repl := series[:0]
 			for _, s := range series {
+				// 是否保留该series
 				if keep(s.Ref) {
 					repl = append(repl, s)
 				}
 			}
 			if len(repl) > 0 {
+				// 序列后的buf
 				buf = enc.Series(repl, buf)
 			}
+			// 统计total series
 			stats.TotalSeries += len(series)
+			// 删除的series
 			stats.DroppedSeries += len(series) - len(repl)
 
 		case record.Samples:
+			// 解析samples
 			samples, err = dec.Samples(rec, samples)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode samples")
@@ -251,6 +273,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		recs = append(recs, buf[start:])
 
 		// Flush records in 1 MB increments.
+		// 超过1M了，flush一次
 		if len(buf) > 1*1024*1024 {
 			if err := cp.Log(recs...); err != nil {
 				return nil, errors.Wrap(err, "flush records")
@@ -268,6 +291,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	if err := cp.Log(recs...); err != nil {
 		return nil, errors.Wrap(err, "flush records")
 	}
+	// 关闭临时文件
 	if err := cp.Close(); err != nil {
 		return nil, errors.Wrap(err, "close checkpoint")
 	}
@@ -285,6 +309,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		return nil, errors.Wrap(err, "close temporary checkpoint directory")
 	}
 
+	// 替换为正式的文件
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}
@@ -298,7 +323,7 @@ func checkpointDir(dir string, i int) string {
 
 type checkpointRef struct {
 	// 名字
-	name  string
+	name string
 	// 和index
 	index int
 }

@@ -57,6 +57,9 @@ func (r *Reader) Next() bool {
 	return r.err == nil
 }
 
+// ┌───────────┬──────────┬────────────┬──────────────┐
+// │ type <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
+// └───────────┴──────────┴────────────┴──────────────┘
 func (r *Reader) next() (err error) {
 	// We have to use r.buf since allocating byte arrays here fails escape
 	// analysis and ends up on the heap, even though it seemingly should not.
@@ -120,10 +123,10 @@ func (r *Reader) next() (err error) {
 			// 长度, 2个字节
 			length = binary.BigEndian.Uint16(hdr[1:])
 			// crc, 4个字节
-			crc    = binary.BigEndian.Uint32(hdr[3:])
+			crc = binary.BigEndian.Uint32(hdr[3:])
 		)
 
-		// 记录的record 大于 一页
+		// 一页太小
 		if length > pageSize-recordHeaderSize {
 			return errors.Errorf("invalid record size %d", length)
 		}

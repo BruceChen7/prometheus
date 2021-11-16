@@ -65,8 +65,8 @@ type Head struct {
 	lastSeriesID             atomic.Uint64
 
 	// 统计head
-	metrics         *headMetrics
-	opts            *HeadOptions
+	metrics *headMetrics
+	opts    *HeadOptions
 	// wal
 	wal             *wal.WAL
 	exemplarMetrics *ExemplarMetrics
@@ -950,6 +950,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	keep := func(id chunks.HeadSeriesRef) bool {
+		// 获取该series对应的id
 		if h.series.getByID(id) != nil {
 			return true
 		}
@@ -1491,8 +1492,8 @@ type memSeries struct {
 	sync.RWMutex
 
 	// 引用id
-	ref           chunks.HeadSeriesRef
-	lset          labels.Labels
+	ref  chunks.HeadSeriesRef
+	lset labels.Labels
 	// 对应mmap磁盘中的chunk
 	mmappedChunks []*mmappedChunk
 	mmMaxTime     int64 // Max time of any mmapped chunk, only used during WAL replay.
@@ -1611,7 +1612,8 @@ func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil
 func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
 func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
 
-// 获取head的size
+// 获取head的Size
+// wal size + cdmSize
 func (h *Head) Size() int64 {
 	var walSize int64
 	if h.wal != nil {

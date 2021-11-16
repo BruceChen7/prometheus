@@ -318,6 +318,7 @@ func (db *DB) replayWAL() error {
 	}
 
 	// Find the last segment.
+	// 获取最后一个index
 	_, last, err := wal.Segments(db.wal.Dir())
 	if err != nil {
 		return errors.Wrap(err, "finding WAL segments")
@@ -553,6 +554,7 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
+	// 对wal文件进行checkpoint
 	if _, err = wal.Checkpoint(db.logger, db.wal, first, last, keep, mint); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
@@ -560,6 +562,7 @@ func (db *DB) truncate(mint int64) error {
 		}
 		return errors.Wrap(err, "create checkpoint")
 	}
+	// 将last之前的wal文件，包含last，进行清除
 	if err := db.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try it again at the next checkpoint.
 		// Leftover segments will still just be ignored in the future if there's a

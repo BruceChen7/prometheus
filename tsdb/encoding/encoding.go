@@ -226,6 +226,7 @@ func (d *Decbuf) Varint64() int64 {
 		return 0
 	}
 	// Now decode "ZigZag encoding" https://developers.google.com/protocol-buffers/docs/encoding#signed_integers.
+	// 变长编码
 	x := int64(ux >> 1)
 	if ux&1 != 0 {
 		x = ^x
@@ -251,11 +252,13 @@ func (d *Decbuf) Be64() uint64 {
 	if d.E != nil {
 		return 0
 	}
+	// 8个字节
 	if len(d.B) < 8 {
 		d.E = ErrInvalidSize
 		return 0
 	}
 	x := binary.BigEndian.Uint64(d.B)
+	// 剩余的字节
 	d.B = d.B[8:]
 	return x
 }

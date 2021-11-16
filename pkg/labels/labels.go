@@ -41,6 +41,7 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
+// label相关的数据结构
 type Labels []Label
 
 func (ls Labels) Len() int           { return len(ls) }

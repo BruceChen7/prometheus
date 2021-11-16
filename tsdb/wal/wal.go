@@ -71,6 +71,7 @@ func (p *page) full() bool {
 // reset
 func (p *page) reset() {
 	for i := range p.buf {
+		// 清空
 		p.buf[i] = 0
 	}
 	p.alloc = 0
@@ -93,7 +94,7 @@ type Segment struct {
 	// 目录
 	dir string
 	// index 号
-	i   int
+	i int
 }
 
 // Index returns the index of the segment.
@@ -150,7 +151,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 
 // CreateSegment creates a new segment k in dir.
 func CreateSegment(dir string, k int) (*Segment, error) {
-	// 文件创建
+	// 文件创建文件
 	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return nil, err
@@ -265,19 +266,22 @@ func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WAL, error) {
+	// 必须是32K的整数倍
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
+	// 创建目录
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create dir")
 	}
 	if logger == nil {
+		// 空的logger
 		logger = log.NewNopLogger()
 	}
 	w := &WAL{
-		dir:         dir,
+		dir:         dir, //目录名称
 		logger:      logger,
-		segmentSize: segmentSize,
+		segmentSize: segmentSize, // 这个分段的大小
 		page:        &page{},
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
@@ -285,6 +289,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	w.metrics = newWALMetrics(reg)
 
+	// 获取最新的wal文件
 	_, last, err := Segments(w.Dir())
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
@@ -294,6 +299,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	writeSegmentIndex := 0
 	// If some segments already exist create one with a higher index than the last segment.
 	if last != -1 {
+		// 下一个segmentIndex
 		writeSegmentIndex = last + 1
 	}
 
@@ -303,6 +309,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		return nil, err
 	}
 
+	// 设置当前segment
 	if err := w.setSegment(segment); err != nil {
 		return nil, err
 	}
@@ -342,12 +349,14 @@ Loop:
 		case f := <-w.actorc:
 			f()
 		case donec := <-w.stopc:
+			// 清理资源
 			close(w.actorc)
 			defer close(donec)
 			break Loop
 		}
 	}
 	// Drain and process any remaining functions.
+	// 处理剩余
 	for f := range w.actorc {
 		f()
 	}
@@ -491,6 +500,7 @@ func (w *WAL) nextSegment() error {
 			return err
 		}
 	}
+	// 创建新的segment，每
 	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
 	if err != nil {
 		return errors.Wrap(err, "create new segment file")
@@ -540,6 +550,7 @@ func (w *WAL) flushPage(clear bool) error {
 		p.alloc = pageSize // Write till end of page.
 	}
 
+	// 写完剩余的部分
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
 	if err != nil {
 		p.flushed += n
@@ -549,6 +560,7 @@ func (w *WAL) flushPage(clear bool) error {
 
 	// We flushed an entire page, prepare a new one.
 	if clear {
+		// 重置一个page
 		p.reset()
 		w.donePages++
 		w.metrics.pageCompletions.Inc()
@@ -621,6 +633,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 func (w *WAL) log(rec []byte, final bool) error {
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
+	// 这一页满了
 	if w.page.full() {
 		if err := w.flushPage(true); err != nil {
 			return err
@@ -628,6 +641,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 	}
 
 	// Compress the record before calculating if a new segment is needed.
+	// 压缩
 	compressed := false
 	if w.compress &&
 		len(rec) > 0 &&
@@ -647,9 +661,11 @@ func (w *WAL) log(rec []byte, final bool) error {
 	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
-	left := w.page.remaining() - recordHeaderSize                                   // Free space in the active page.
+	left := w.page.remaining() - recordHeaderSize // Free space in the active page.
+	// 每个page都有32kb
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
+	// 如果比剩余的page还要大
 	if len(rec) > left {
 		if err := w.nextSegment(); err != nil {
 			return err
@@ -798,6 +814,7 @@ func (w *WAL) Close() (err error) {
 // Segments returns the range [first, n] of currently existing segments.
 // If no segments are found, first and n are -1.
 func Segments(walDir string) (first, last int, err error) {
+	// 获取所有的segment
 	refs, err := listSegments(walDir)
 	if err != nil {
 		return 0, 0, err
@@ -805,6 +822,7 @@ func Segments(walDir string) (first, last int, err error) {
 	if len(refs) == 0 {
 		return -1, -1, nil
 	}
+	// 获取最小和最大的index
 	return refs[0].index, refs[len(refs)-1].index, nil
 }
 
@@ -814,6 +832,7 @@ type segmentRef struct {
 }
 
 func listSegments(dir string) (refs []segmentRef, err error) {
+	// 获取所有的segments
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -853,6 +872,7 @@ func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment ranges.
 // If first or last are -1, the range is open on the respective end.
+// 获取多个segment reader
 func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	var segs []*Segment
 
@@ -896,7 +916,8 @@ type segmentBufReader struct {
 // nolint:revive // TODO: Consider exporting segmentBufReader
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
-		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
+		// 16个page size
+		buf: bufio.NewReaderSize(segs[0], 16*pageSize),
 		// 一系列的文件
 		segs: segs,
 	}
