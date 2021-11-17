@@ -759,6 +759,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	// 完成周期性的compact和reload block
+	// 用来精简wal文件
 	go db.run()
 
 	return db, nil
@@ -807,6 +808,7 @@ func (db *DB) run() {
 		select {
 		case <-db.stopc:
 			return
+		// 用来在指定时间返回
 		case <-time.After(backoff):
 		}
 
@@ -823,7 +825,7 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-		case <-db.compactc: // 需要compact
+		case <-db.compactc: // 需要compact 用来精简wal文件
 			db.metrics.compactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()

@@ -499,6 +499,7 @@ func (h *Head) Init(minValidTime int64) error {
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
 		var err error
+		// 加载snapshot
 		snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 		if err != nil {
 			snapIdx, snapOffset = -1, 0
@@ -928,7 +929,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
-	//已经截断了
+	// 已经截断了
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
@@ -936,6 +937,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
+	// 找到wal中的segments
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
 		return errors.Wrap(err, "get segment range")
@@ -953,6 +955,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// If we have less than two segments, it's not worth checkpointing yet.
 	// With the default 2h blocks, this will keeping up to around 3h worth
 	// of WAL segments.
+	// 高水位的segments需要处理
 	last = first + (last-first)*2/3
 	if last <= first {
 		return nil
@@ -963,12 +966,15 @@ func (h *Head) truncateWAL(mint int64) error {
 		if h.series.getByID(id) != nil {
 			return true
 		}
+		// 在delete中找到
 		h.deletedMtx.Lock()
 		_, ok := h.deleted[id]
 		h.deletedMtx.Unlock()
 		return ok
 	}
+	// 添加一个metrics
 	h.metrics.checkpointCreationTotal.Inc()
+	// 创建一个check point
 	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
@@ -976,6 +982,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		}
 		return errors.Wrap(err, "create checkpoint")
 	}
+	// 老的checkpoint文件要删除
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
@@ -993,6 +1000,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 	h.deletedMtx.Unlock()
 
+	// 统计
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := wal.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond

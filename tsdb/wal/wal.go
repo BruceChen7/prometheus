@@ -749,6 +749,7 @@ func (w *WAL) Truncate(i int) (err error) {
 	w.metrics.truncateTotal.Inc()
 	defer func() {
 		if err != nil {
+			// 增加监控
 			w.metrics.truncateFail.Inc()
 		}
 	}()
@@ -756,6 +757,7 @@ func (w *WAL) Truncate(i int) (err error) {
 	if err != nil {
 		return err
 	}
+	// 移除相应的文件
 	for _, r := range refs {
 		if r.index >= i {
 			break
