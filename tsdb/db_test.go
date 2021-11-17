@@ -54,14 +54,18 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// 用来校验goroutine是否泄漏
 	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
+	// 创建tmp目录
 	tmpdir, err := ioutil.TempDir("", "test")
+	// 用来保证返回没有nil
 	require.NoError(t, err)
 
 	if len(rngs) == 0 {
+		// 用来创建db
 		db, err = Open(tmpdir, nil, nil, opts, nil)
 	} else {
 		opts, rngs = validateOpts(opts, rngs)
@@ -2903,7 +2907,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 			require.NoError(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 		}()
 		require.NoError(t, os.Mkdir(outDir, os.ModePerm))
-		// copy files 
+		// copy files
 		require.NoError(t, fileutil.CopyDirs(dbDir, outDir))
 	}
 	{

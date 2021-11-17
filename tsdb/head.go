@@ -525,6 +525,7 @@ func (h *Head) Init(minValidTime int64) error {
 		mmappedChunks = h.removeCorruptedMmappedChunks(err, refSeries)
 	}
 
+	// 记录时间
 	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(mmapChunkReplayStart).String())
 	if h.wal == nil {
 		level.Info(h.logger).Log("msg", "WAL not found")
@@ -611,7 +612,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	walReplayDuration := time.Since(start)
 	h.metrics.walTotalReplayDuration.Set(walReplayDuration.Seconds())
-	// 打印重的时长
+	// 打印重要的时长节点
 	level.Info(h.logger).Log(
 		"msg", "WAL replay completed",
 		"checkpoint_replay_duration", checkpointReplayDuration.String(),
@@ -626,16 +627,21 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	// 获取所有的chunk
 	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
+		// 该head的最低有效时间大于mmap中的chuan的最大有效时间，直接不处理
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
+		// 获取series id，如果目前的内存head chunk中没有
 		ms, ok := refSeries[seriesRef]
 		if !ok {
+			// 找到mmap中的该series
 			slice := mmappedChunks[seriesRef]
+			// 最后的一个maxTime 和当前的mint重合
 			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
 				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 			}
 
+			// append 到内存中的head中
 			slice = append(slice, &mmappedChunk{
 				ref:        chunkRef,
 				minTime:    mint,
@@ -643,9 +649,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				numSamples: numSamples,
 			})
 			mmappedChunks[seriesRef] = slice
+			// append一个
 			return nil
 		}
 
+		// 目前memory中有该mmapchunk的引用
 		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
 			return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 		}
@@ -659,6 +667,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			maxTime:    maxt,
 			numSamples: numSamples,
 		})
+		// 更新当前head的有效时间范围
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
@@ -1596,7 +1605,10 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 
 // mappedChunks describes a head chunk on disk that has been mmapped
 type mmappedChunk struct {
-	ref              chunks.ChunkDiskMapperRef
+	// The upper 4 bytes hold the index of the head chunk file and
+	// the lower 4 bytes hold the byte offset in the head chunk file where the chunk starts.
+	ref chunks.ChunkDiskMapperRef
+	// sample的数量
 	numSamples       uint16
 	minTime, maxTime int64
 }

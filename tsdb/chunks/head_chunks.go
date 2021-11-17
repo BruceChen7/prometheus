@@ -98,6 +98,7 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
+	// 当前已经写的大小
 	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
@@ -614,6 +615,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 // and runs the provided function on each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
+// 迭代所有的head chunks
 func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
@@ -622,22 +624,44 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 		cdm.fileMaxtSet = true
 	}()
 
+	// crc32
 	chkCRC32 := newCRC32()
 
 	// Iterate files in ascending order.
 	segIDs := make([]int, 0, len(cdm.mmappedChunkFiles))
 	for seg := range cdm.mmappedChunkFiles {
+		// key是segment id
 		segIDs = append(segIDs, seg)
 	}
+	// 按照segmentID排序
 	sort.Ints(segIDs)
 	for _, segID := range segIDs {
+		// 获取到mmapFile
 		mmapFile := cdm.mmappedChunkFiles[segID]
+		// 获取chunk file文件的大小
 		fileEnd := mmapFile.byteSlice.Len()
 		if segID == cdm.curFileSequence {
 			fileEnd = int(cdm.curFileSize())
 		}
+		// ┌──────────────────────────────┐
+		// │  magic(0x0130BC91) <4 byte>  │
+		// ├──────────────────────────────┤
+		// │    version(1) <1 byte>       │
+		// ├──────────────────────────────┤
+		// │    padding(0) <3 byte>       │
+		// ├──────────────────────────────┤
+		// │ ┌──────────────────────────┐ │
+		// │ │         Chunk 1          │ │
+		// │ ├──────────────────────────┤ │
+		// │ │          ...             │ │
+		// │ ├──────────────────────────┤ │
+		// │ │         Chunk N          │ │
+		// │ └──────────────────────────┘ │
+		// └──────────────────────────────┘
+		// 这个是offset
 		idx := HeadChunkFileHeaderSize
 		for idx < fileEnd {
+			// 异常场景校验
 			if fileEnd-idx < MaxHeadChunkMetaSize {
 				// Check for all 0s which marks the end of the file.
 				allZeros := true
@@ -659,10 +683,17 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				}
 			}
 			chkCRC32.Reset()
+			// 新建一个chuankRef
 			chunkRef := newChunkDiskMapperRef(uint64(segID), uint64(idx))
+
+			// 开始的偏移量
+			// ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
+			// | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
+			// └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 
 			startIdx := idx
 			seriesRef := HeadSeriesRef(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+SeriesRefSize)))
+			// 偏移量加上
 			idx += SeriesRefSize
 			mint := int64(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+MintMaxtSize)))
 			idx += MintMaxtSize
@@ -673,14 +704,17 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			// As series ref always starts from 1, we assume it being 0 to be the end of the actual file data.
 			// We are not considering possible file corruption that can cause it to be 0.
 			// Additionally we are checking mint and maxt just to be sure.
+			// 到结尾了
 			if seriesRef == 0 && mint == 0 && maxt == 0 {
 				break
 			}
 
 			idx += ChunkEncodingSize // Skip encoding.
+			// MaxChunkLengthFieldSize 最多5个字节
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n
 
+			// 获取真正的sample的数量
 			numSamples := binary.BigEndian.Uint16(mmapFile.byteSlice.Range(idx, idx+2))
 			idx += int(dataLen) // Skip the data.
 
@@ -696,6 +730,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 
 			// Check CRC.
 			sum := mmapFile.byteSlice.Range(idx, idx+CRCSize)
+			// 从开始地方到crc校验和开始处计算crc校验和
 			if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(startIdx, idx)); err != nil {
 				return err
 			}
@@ -708,10 +743,12 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			}
 			idx += CRCSize
 
+			// 记录最大的maxt
 			if maxt > mmapFile.maxt {
 				mmapFile.maxt = maxt
 			}
 
+			// 应用回调函数
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
 				if cerr, ok := err.(*CorruptionErr); ok {
 					cerr.Dir = cdm.dir.Name()
@@ -722,6 +759,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			}
 		}
 
+		// 比最后的文件id还要大
 		if idx > fileEnd {
 			// It should be equal to the slice length.
 			return &CorruptionErr{
