@@ -105,9 +105,11 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		var sgmRange []SegmentRange
 		// 获取最新的chekpoint dir
 		dir, idx, err := LastCheckpoint(w.Dir())
+		// 获取上次的checkpoint 目录
 		if err != nil && err != record.ErrNotFound {
 			return nil, errors.Wrap(err, "find last checkpoint")
 		}
+		// 从下个index开始
 		last := idx + 1
 		if err == nil {
 			// 不能超过上次merge的index
@@ -134,12 +136,12 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	cpdir := checkpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
-	// 删除之前的临时目录
+	// 清除临时文件目录
 	if err := os.RemoveAll(cpdirtmp); err != nil {
 		return nil, errors.Wrap(err, "remove previous temporary checkpoint dir")
 	}
 
-	// 创建目录
+	// 创建新的临时文件目录
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}

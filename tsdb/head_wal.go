@@ -438,7 +438,7 @@ func (h *Head) processWALSamples(
 
 const (
 	// series 类型的数据
-	chunkSnapshotRecordTypeSeries     uint8 = 1
+	chunkSnapshotRecordTypeSeries uint8 = 1
 	// 墓碑数据
 	chunkSnapshotRecordTypeTombstones uint8 = 2
 	chunkSnapshotRecordTypeExemplars  uint8 = 3
@@ -496,6 +496,7 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 	// 获取8个字节的id
 	csr.ref = chunks.HeadSeriesRef(dec.Be64())
 
+	// label已经排序了
 	// The label set written to the disk is already sorted.
 	// 获取长度
 	csr.lset = make(labels.Labels, dec.Uvarint())
@@ -957,7 +958,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 	r := wal.NewReader(sr)
 	var loopErr error
 Outer:
-        // 获取一页
+	// 获取一页
 	for r.Next() {
 		select {
 		case err := <-errChan:
