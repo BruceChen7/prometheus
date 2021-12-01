@@ -485,6 +485,23 @@ type Reader struct {
 	pool chunkenc.Pool
 }
 
+// 对chunk进行读
+// ┌──────────────────────────────┐
+// │  magic(0x85BD40DD) <4 byte>  │
+// ├──────────────────────────────┤
+// │    version(1) <1 byte>       │
+// ├──────────────────────────────┤
+// │    padding(0) <3 byte>       │
+// ├──────────────────────────────┤
+// │ ┌──────────────────────────┐ │
+// │ │         Chunk 1          │ │
+// │ ├──────────────────────────┤ │
+// │ │          ...             │ │
+// │ ├──────────────────────────┤ │
+// │ │         Chunk N          │ │
+// │ └──────────────────────────┘ │
+// └──────────────────────────────┘
+
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
 	cr := Reader{pool: pool, bs: bs, cs: cs}
 	for i, b := range cr.bs {
@@ -508,6 +525,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
+	// 找到里面的sequence file
 	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
@@ -520,7 +538,9 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 		bs []ByteSlice
 		cs []io.Closer
 	)
+	// 采用mmap的方式打开文件
 	for _, fn := range files {
+		// 放到内存中
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
 			return nil, tsdb_errors.NewMulti(
@@ -529,9 +549,11 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 			).Err()
 		}
 		cs = append(cs, f)
+		// append 所有的内容
 		bs = append(bs, realByteSlice(f.Bytes()))
 	}
 
+	// 对chunk进行解析，返回reader
 	reader, err := newReader(bs, cs, pool)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
@@ -553,6 +575,7 @@ func (s *Reader) Size() int64 {
 
 // Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
+	// 段开始的位置, 偏移量
 	sgmIndex, chkStart := BlockChunkRef(ref).Unpack()
 	chkCRC32 := newCRC32()
 
@@ -560,29 +583,41 @@ func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
 		return nil, errors.Errorf("segment index %d out of range", sgmIndex)
 	}
 
+	// 找到segment
 	sgmBytes := s.bs[sgmIndex]
 
+	// 非法，只包含头的信息都不够
 	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
 		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
 	c := sgmBytes.Range(chkStart, chkStart+MaxChunkLengthFieldSize)
+	// 获取这个chunk数据长度
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 
+	// chunk encoding
 	chkEncStart := chkStart + n
+
+	// 结尾的位置
 	chkEnd := chkEncStart + ChunkEncodingSize + int(chkDataLen) + crc32.Size
+
+	// 数据开始的位置
 	chkDataStart := chkEncStart + ChunkEncodingSize
+	// 数据开始的位置
 	chkDataEnd := chkEnd - crc32.Size
 
+	// chunk不合法
 	if chkEnd > sgmBytes.Len() {
 		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
+	// 获取真个数据
 	sum := sgmBytes.Range(chkDataEnd, chkEnd)
+	// 计算包含encoding，数据在內的crc
 	if _, err := chkCRC32.Write(sgmBytes.Range(chkEncStart, chkDataEnd)); err != nil {
 		return nil, err
 	}
@@ -591,7 +626,9 @@ func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
 		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
 	}
 
+	// 获取chnkData
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
+	// 获取chunk的编码
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
 	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
 }

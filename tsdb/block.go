@@ -205,11 +205,14 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	// 读取meta文件
 	var m BlockMeta
 
+	// 反序列化
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, 0, err
 	}
+	// 版本不一致， 默认是1
 	if m.Version != metaVersion1 {
 		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
@@ -291,17 +294,21 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 		}
 	}()
+	// 获取meta文件
 	meta, sizeMeta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
 
+	// 读取chunks
 	cr, err := chunks.NewDirReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
+	// 资源回收
 	closers = append(closers, cr)
 
+	// 读取index file
 	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
 	if err != nil {
 		return nil, err
@@ -312,17 +319,23 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	if err != nil {
 		return nil, err
 	}
+	// 回收资源
 	closers = append(closers, tr)
 
 	pb = &Block{
-		dir:               dir,
-		meta:              *meta,
-		chunkr:            cr,
-		indexr:            ir,
-		tombstones:        tr,
-		symbolTableSize:   ir.SymbolTableSize(),
-		logger:            logger,
-		numBytesChunks:    cr.Size(),
+		mtx:             sync.RWMutex{},
+		closing:         false,
+		pendingReaders:  sync.WaitGroup{},
+		dir:             dir,
+		meta:            *meta,
+		symbolTableSize: ir.SymbolTableSize(),
+		chunkr:          cr,
+		indexr:          ir,
+		tombstones:      tr,
+		logger:          logger,
+		// chunk的大小
+		numBytesChunks: cr.Size(),
+		// index的字节数
 		numBytesIndex:     ir.Size(),
 		numBytesTombstone: sizeTomb,
 		numBytesMeta:      sizeMeta,

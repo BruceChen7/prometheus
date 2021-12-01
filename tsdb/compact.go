@@ -484,6 +484,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
+	// 生成一个block
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := &BlockMeta{
@@ -491,6 +492,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		MinTime: mint,
 		MaxTime: maxt,
 	}
+	// 级别为1
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
@@ -500,6 +502,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		}
 	}
 
+	// 写到目录中的文件
 	err := c.write(dest, meta, b)
 	if err != nil {
 		return uid, err
@@ -564,6 +567,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return err
 	}
 
+	// 生成一个临时目录
 	if err = os.MkdirAll(tmp, 0o777); err != nil {
 		return err
 	}
@@ -572,6 +576,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// data of all blocks.
 	var chunkw ChunkWriter
 
+	// 将chunk进行写入
 	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
@@ -579,6 +584,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	closers = append(closers, chunkw)
 	// Record written chunk sizes on level 1 compactions.
 	if meta.Compaction.Level == 1 {
+		// level 1 compaction
 		chunkw = &instrumentedChunkWriter{
 			ChunkWriter: chunkw,
 			size:        c.metrics.chunkSize,
@@ -587,10 +593,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}
 
+	// 生成一个index
 	indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
+	// 资源清理器
 	closers = append(closers, indexw)
 
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
@@ -651,6 +659,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	df = nil
 
 	// Block successfully written, make it visible in destination dir by moving it from tmp one.
+	// 产生了一个dir
 	if err := fileutil.Replace(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}

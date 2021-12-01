@@ -577,7 +577,9 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 	p.i++
 	p.currChkMeta = p.chks[p.i]
 
+	// 获取真正的chunk
 	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta.Ref)
+
 	if p.err != nil {
 		p.err = errors.Wrapf(p.err, "cannot populate chunk %d", p.currChkMeta.Ref)
 		return false

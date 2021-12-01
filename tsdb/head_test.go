@@ -2381,7 +2381,8 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	db.DisableCompactions()
 
 	var (
-		app        = db.Appender(context.Background())
+		app = db.Appender(context.Background())
+		// 设置为series为0
 		ref        = storage.SeriesRef(0)
 		mint, maxt = int64(0), int64(0)
 		err        error
@@ -2392,6 +2393,8 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	// 7 chunks with 15s scrape interval.
 	for i := int64(0); i <= 120*7; i++ {
 		ts := i * DefaultBlockDuration / (4 * 120)
+		// 加入一个sample
+		// 返回series的一个引用引用
 		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
 		require.NoError(t, err)
 		maxt = ts

@@ -1644,7 +1644,6 @@ func (h *RangeHead) Size() int64 {
 func (h *Head) startWALReplayStatus(startFrom, last int) {
 	h.stats.WALReplayStatus.Lock()
 	defer h.stats.WALReplayStatus.Unlock()
-
 	h.stats.WALReplayStatus.Min = startFrom
 	h.stats.WALReplayStatus.Max = last
 	h.stats.WALReplayStatus.Current = startFrom

@@ -99,6 +99,7 @@ func (a *initAppender) Rollback() error {
 	return a.app.Rollback()
 }
 
+// 返回一个appender的实现
 // Appender returns a new Appender on the database.
 func (h *Head) Appender(_ context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
@@ -122,6 +123,7 @@ func (h *Head) appender() *headAppender {
 		exemplarsBuf = h.getExemplarBuffer()
 	}
 
+	// 创建一个appender
 	return &headAppender{
 		head:                  h,
 		minValidTime:          h.appendableMinValidTime(),
@@ -233,6 +235,7 @@ type headAppender struct {
 	closed                          bool
 }
 
+// append实现
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
