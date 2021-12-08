@@ -64,22 +64,28 @@ const (
 )
 
 func (b *bstream) writeBit(bit bit) {
+	// 还剩下0 bit
 	if b.count == 0 {
+		// 扩大一个字节
 		b.stream = append(b.stream, 0)
+		// 还剩下bit
 		b.count = 8
 	}
 
 	i := len(b.stream) - 1
 
 	if bit {
+		// 这一位填上1
 		b.stream[i] |= 1 << (b.count - 1)
 	}
-
+	// 少了一bit
 	b.count--
 }
 
 func (b *bstream) writeByte(byt byte) {
+	// 剩余没有一个bit
 	if b.count == 0 {
+		// 添加一个字节
 		b.stream = append(b.stream, 0)
 		b.count = 8
 	}
@@ -87,8 +93,10 @@ func (b *bstream) writeByte(byt byte) {
 	i := len(b.stream) - 1
 
 	// Complete the last byte with the leftmost b.count bits from byt.
+	// 写入之前剩下的bit位
 	b.stream[i] |= byt >> (8 - b.count)
 
+	// 添加一个字节
 	b.stream = append(b.stream, 0)
 	i++
 	// Write the remainder, if any.
@@ -99,6 +107,7 @@ func (b *bstream) writeByte(byt byte) {
 // in left-to-right order.
 func (b *bstream) writeBits(u uint64, nbits int) {
 	u <<= 64 - uint(nbits)
+	// 写下多个字节
 	for nbits >= 8 {
 		byt := byte(u >> 56)
 		b.writeByte(byt)
@@ -106,6 +115,7 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 		nbits -= 8
 	}
 
+	// 写下剩余的bit
 	for nbits > 0 {
 		b.writeBit((u >> 63) == 1)
 		u <<= 1
@@ -128,6 +138,7 @@ func newBReader(b []byte) bstreamReader {
 }
 
 func (b *bstreamReader) readBit() (bit, error) {
+	// 有效位数位0
 	if b.valid == 0 {
 		if !b.loadNextBuffer(1) {
 			return false, io.EOF
@@ -155,6 +166,7 @@ func (b *bstreamReader) readBitFast() (bit, error) {
 // read from the stream, and any other bits 0.
 func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	if b.valid == 0 {
+		// stream空间不足
 		if !b.loadNextBuffer(nbits) {
 			return 0, io.EOF
 		}
@@ -208,6 +220,7 @@ func (b *bstreamReader) ReadByte() (byte, error) {
 // The input nbits is the minimum number of bits that must be read, but the implementation
 // can read more (if possible) to improve performances.
 func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
+	// 超过了stream的长度
 	if b.streamOffset >= len(b.stream) {
 		return false
 	}
@@ -216,9 +229,11 @@ func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
 	// in a optimized way. It's guaranteed that this branch will never read from the
 	// very last byte of the stream (which suffers race conditions due to concurrent
 	// writes).
+	// 当前stream超过8个字节
 	if b.streamOffset+8 < len(b.stream) {
 		b.buffer = binary.BigEndian.Uint64(b.stream[b.streamOffset:])
 		b.streamOffset += 8
+		// 有效位数为64
 		b.valid = 64
 		return true
 	}

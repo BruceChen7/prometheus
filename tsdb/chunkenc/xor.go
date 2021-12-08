@@ -60,25 +60,30 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk() *XORChunk {
+	// 预留出2byte，放number of sample
 	b := make([]byte, 2, 128)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
 // Encoding returns the encoding type.
 func (c *XORChunk) Encoding() Encoding {
+	// 编码方式
 	return EncXOR
 }
 
 // Bytes returns the underlying byte slice of the chunk.
 func (c *XORChunk) Bytes() []byte {
+	// 获取底层的byte stream
 	return c.b.bytes()
 }
 
 // NumSamples returns the number of samples in the chunk.
 func (c *XORChunk) NumSamples() int {
+	// 获取前2个字节
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
+// 缩容
 func (c *XORChunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
 		buf := make([]byte, l)
@@ -122,12 +127,17 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 		xorIter.Reset(c.b.bytes())
 		return xorIter
 	}
+	// 新建一个reader
 	return &xorIterator{
-		// The first 2 bytes contain chunk headers.
-		// We skip that for actual samples.
 		br:       newBReader(c.b.bytes()[2:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
+		numRead:  0,
 		t:        math.MinInt64,
+		val:      0,
+		leading:  0,
+		trailing: 0,
+		tDelta:   0,
+		err:      nil,
 	}
 }
 
@@ -139,6 +149,7 @@ func (c *XORChunk) Iterator(it Iterator) Iterator {
 type xorAppender struct {
 	b *bstream
 
+	// 关联的时间戳
 	t      int64
 	v      float64
 	tDelta uint64
@@ -147,28 +158,36 @@ type xorAppender struct {
 	trailing uint8
 }
 
+// 添加一个时间戳和value
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if num == 0 {
 		buf := make([]byte, binary.MaxVarintLen64)
+		// binary.PutVarint返回编码后的字节数
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			// 先写时间戳
 			a.b.writeByte(b)
 		}
+		// 然后些值
 		a.b.writeBits(math.Float64bits(v), 64)
 
-	} else if num == 1 {
+	} else if num == 1 { // 如果是前面写了一个
+		// 第一个delta
 		tDelta = uint64(t - a.t)
 
 		buf := make([]byte, binary.MaxVarintLen64)
 		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+			// 写tDelta
 			a.b.writeByte(b)
 		}
 
+		// 写v float delta
 		a.writeVDelta(v)
 
 	} else {
+		// 比较delta of delta
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 
@@ -177,38 +196,43 @@ func (a *xorAppender) Append(t int64, v float64) {
 		switch {
 		case dod == 0:
 			a.b.writeBit(zero)
-		case bitRange(dod, 14):
-			a.b.writeBits(0b10, 2)
+		case bitRange(dod, 14): // 14个bit能表示
+			a.b.writeBits(0b10, 2) // 写入前缀2
 			a.b.writeBits(uint64(dod), 14)
-		case bitRange(dod, 17):
-			a.b.writeBits(0b110, 3)
+		case bitRange(dod, 17): // 17个bit能表示
+			a.b.writeBits(0b110, 3) // 写入前缀3
 			a.b.writeBits(uint64(dod), 17)
-		case bitRange(dod, 20):
+		case bitRange(dod, 20): // 20 bit能表示
 			a.b.writeBits(0b1110, 4)
-			a.b.writeBits(uint64(dod), 20)
+			a.b.writeBits(uint64(dod), 20) // 写入dod，用20个字节来表示
 		default:
-			a.b.writeBits(0b1111, 4)
+			a.b.writeBits(0b1111, 4) // 前缀
 			a.b.writeBits(uint64(dod), 64)
 		}
 
 		a.writeVDelta(v)
 	}
-
+	// 更新当前的t
 	a.t = t
+	// 更新当前的值
 	a.v = v
+	// 添加当前stream中的number
 	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
 	a.tDelta = tDelta
 }
 
 // bitRange returns whether the given integer can be represented by nbits.
 // See docs/bstream.md.
+// 能否用相应的nbits来表示
+// 如果nbits位3，那么能够表示的范围是-3到4
 func bitRange(x int64, nbits uint8) bool {
 	return -((1<<(nbits-1))-1) <= x && x <= 1<<(nbits-1)
 }
 
+//
 func (a *xorAppender) writeVDelta(v float64) {
 	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
-
+	// 如果相同
 	if vDelta == 0 {
 		a.b.writeBit(zero)
 		return
@@ -241,6 +265,7 @@ func (a *xorAppender) writeVDelta(v float64) {
 	}
 }
 
+// 抽象出来的迭代器
 type xorIterator struct {
 	br       bstreamReader
 	numTotal uint16
@@ -280,6 +305,7 @@ func (it *xorIterator) Err() error {
 func (it *xorIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
+	// 除去header
 	it.br = newBReader(b[2:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 
@@ -297,6 +323,7 @@ func (it *xorIterator) Next() bool {
 		return false
 	}
 
+	// 还没有读过
 	if it.numRead == 0 {
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
@@ -309,6 +336,7 @@ func (it *xorIterator) Next() bool {
 			return false
 		}
 		it.t = t
+		// 获取值
 		it.val = math.Float64frombits(v)
 
 		it.numRead++
