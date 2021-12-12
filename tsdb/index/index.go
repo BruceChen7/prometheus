@@ -59,6 +59,7 @@ type indexWriterSeries struct {
 
 type indexWriterSeriesSlice []*indexWriterSeries
 
+// 用来排序
 func (s indexWriterSeriesSlice) Len() int      { return len(s) }
 func (s indexWriterSeriesSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
