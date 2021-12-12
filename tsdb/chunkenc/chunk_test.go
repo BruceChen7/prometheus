@@ -41,6 +41,7 @@ func TestChunk(t *testing.T) {
 }
 
 func testChunk(t *testing.T, c Chunk) {
+	// 创建一个
 	app, err := c.Appender()
 	require.NoError(t, err)
 
@@ -50,6 +51,7 @@ func testChunk(t *testing.T, c Chunk) {
 		v  = 1243535.123
 	)
 	for i := 0; i < 300; i++ {
+		// 随机的的ts
 		ts += int64(rand.Intn(10000) + 1)
 		if i%2 == 0 {
 			v += float64(rand.Intn(1000000))
@@ -60,6 +62,7 @@ func testChunk(t *testing.T, c Chunk) {
 		// Start with a new appender every 10th sample. This emulates starting
 		// appending to a partially filled chunk.
 		if i%10 == 0 {
+			// 重新创建一个appender
 			app, err = c.Appender()
 			require.NoError(t, err)
 		}
@@ -71,6 +74,7 @@ func testChunk(t *testing.T, c Chunk) {
 	// 1. Expand iterator in simple case.
 	it1 := c.Iterator(nil)
 	var res1 []pair
+	// 迭代获取每个series
 	for it1.Next() {
 		ts, v := it1.At()
 		res1 = append(res1, pair{t: ts, v: v})

@@ -237,12 +237,14 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	seriesIter := s.Series.Iterator()
 	for seriesIter.Next() {
 		// Create a new chunk if too many samples in the current one.
+		// 大于120个sample
 		if i >= seriesToChunkEncoderSplit {
 			chks = append(chks, chunks.Meta{
 				MinTime: mint,
 				MaxTime: maxt,
 				Chunk:   chk,
 			})
+			// 生成一个chunk
 			chk = chunkenc.NewXORChunk()
 			app, err = chk.Appender()
 			if err != nil {

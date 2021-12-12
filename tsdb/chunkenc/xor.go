@@ -154,6 +154,7 @@ type xorAppender struct {
 	v      float64
 	tDelta uint64
 
+	// 用来encoding value
 	leading  uint8
 	trailing uint8
 }
@@ -231,36 +232,55 @@ func bitRange(x int64, nbits uint8) bool {
 
 //
 func (a *xorAppender) writeVDelta(v float64) {
+	// 进行异或
 	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
 	// 如果相同
 	if vDelta == 0 {
 		a.b.writeBit(zero)
 		return
 	}
+	// 添加1 bit
 	a.b.writeBit(one)
 
+	// 最高位有多少个0
 	leading := uint8(bits.LeadingZeros64(vDelta))
+	// 结尾位有多少个0
 	trailing := uint8(bits.TrailingZeros64(vDelta))
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
 	if leading >= 32 {
+		// 最多位31位
 		leading = 31
 	}
 
+	// 上次的a.leading不为11111
+	// 足够5bit来保存
 	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
+		// 再次写入一个0
 		a.b.writeBit(zero)
+		// 用上次的leading 和traing来记录
 		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
-	} else {
+	} else { // leading 相同的太多
+		// a.leading == 0xff ||
+		// leading < a.leading 相同的leading 没有上次leading的多 ||
+		// trailing < a.trailing 小于上次相同的traing
+
+		// 更新leading 和 trailing
 		a.leading, a.trailing = leading, trailing
 
+		// 再写一个1
 		a.b.writeBit(one)
+		// 用5位来表示相同的leading 位数
 		a.b.writeBits(uint64(leading), 5)
 
 		// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
 		// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
 		// So instead we write out a 0 and adjust it back to 64 on unpacking.
+		// 不同的位数
 		sigbits := 64 - leading - trailing
+		// 不同的位数
 		a.b.writeBits(uint64(sigbits), 6)
+		// 写下值
 		a.b.writeBits(vDelta>>trailing, int(sigbits))
 	}
 }
@@ -418,6 +438,7 @@ func (it *xorIterator) Next() bool {
 }
 
 func (it *xorIterator) readValue() bool {
+	// 读取一个bit
 	bit, err := it.br.readBitFast()
 	if err != nil {
 		bit, err = it.br.readBit()
@@ -450,6 +471,7 @@ func (it *xorIterator) readValue() bool {
 				it.err = err
 				return false
 			}
+			// 读取当前leading中相同的位数
 			it.leading = uint8(bits)
 
 			bits, err = it.br.readBitsFast(6)
@@ -460,11 +482,13 @@ func (it *xorIterator) readValue() bool {
 				it.err = err
 				return false
 			}
+			// 读取不同的部分
 			mbits := uint8(bits)
 			// 0 significant bits here means we overflowed and we actually need 64; see comment in encoder
 			if mbits == 0 {
 				mbits = 64
 			}
+			// 获取traling中相同的位数
 			it.trailing = 64 - it.leading - mbits
 		}
 
@@ -479,6 +503,7 @@ func (it *xorIterator) readValue() bool {
 		}
 		vbits := math.Float64bits(it.val)
 		vbits ^= bits << it.trailing
+		// 恢复value
 		it.val = math.Float64frombits(vbits)
 	}
 
