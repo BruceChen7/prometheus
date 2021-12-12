@@ -411,6 +411,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	return errors.Wrap(err, "writing WAL")
 }
 
+// 用来读数据
 func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQueryable, error) {
 	select {
 	case <-db.closed:
@@ -432,6 +433,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = db.dir
+	// 新建一个head
 	head, err := NewHead(nil, db.logger, nil, opts, NewHeadStats())
 	if err != nil {
 		return nil, err
@@ -611,9 +613,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		return nil, err
 	}
 	if l == nil {
+		// 创建日志
 		l = log.NewNopLogger()
 	}
 	if stats == nil {
+		// 统计
 		stats = NewDBStats()
 	}
 
@@ -641,6 +645,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	db := &DB{
+		// db目录
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
