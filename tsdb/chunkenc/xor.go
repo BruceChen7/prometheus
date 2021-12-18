@@ -93,18 +93,21 @@ func (c *XORChunk) Compact() {
 }
 
 // Appender implements the Chunk interface.
+// 添加一个采样
 func (c *XORChunk) Appender() (Appender, error) {
 	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
 	// We iterate through the end and populate via the iterator's state.
+	// 迭代到最后
 	for it.Next() {
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
 	}
 
+	// 返回一个迭代器
 	a := &xorAppender{
 		b:        &c.b,
 		t:        it.t,
@@ -154,7 +157,7 @@ type xorAppender struct {
 	v      float64
 	tDelta uint64
 
-	// 用来encoding value
+	// 开始一个字节为0xff
 	leading  uint8
 	trailing uint8
 }
@@ -345,6 +348,7 @@ func (it *xorIterator) Next() bool {
 
 	// 还没有读过
 	if it.numRead == 0 {
+		// 从bstream中读取
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			it.err = err
@@ -355,10 +359,12 @@ func (it *xorIterator) Next() bool {
 			it.err = err
 			return false
 		}
+		// 获取时间戳
 		it.t = t
 		// 获取值
 		it.val = math.Float64frombits(v)
 
+		// 读取的数 + 1
 		it.numRead++
 		return true
 	}
@@ -368,7 +374,9 @@ func (it *xorIterator) Next() bool {
 			it.err = err
 			return false
 		}
+		// 设置delta
 		it.tDelta = tDelta
+		// 设置时间戳
 		it.t = it.t + int64(it.tDelta)
 
 		return it.readValue()
@@ -386,6 +394,7 @@ func (it *xorIterator) Next() bool {
 			it.err = err
 			return false
 		}
+		// 读取到0为为止
 		if bit == zero {
 			break
 		}
@@ -397,8 +406,10 @@ func (it *xorIterator) Next() bool {
 	case 0b0:
 		// dod == 0
 	case 0b10:
+		// dod使用的bit数
 		sz = 14
 	case 0b110:
+		// dod使用的bit数
 		sz = 17
 	case 0b1110:
 		sz = 20
@@ -414,6 +425,7 @@ func (it *xorIterator) Next() bool {
 	}
 
 	if sz != 0 {
+		// 读取对应bit的数
 		bits, err := it.br.readBitsFast(sz)
 		if err != nil {
 			bits, err = it.br.readBits(sz)
@@ -428,12 +440,14 @@ func (it *xorIterator) Next() bool {
 		if bits > (1 << (sz - 1)) {
 			bits -= 1 << sz
 		}
+		// 计算真正的dod的数值
 		dod = int64(bits)
 	}
 
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t = it.t + int64(it.tDelta)
 
+	// 获取value值
 	return it.readValue()
 }
 
@@ -507,6 +521,7 @@ func (it *xorIterator) readValue() bool {
 		it.val = math.Float64frombits(vbits)
 	}
 
+	// 读取数 + 1
 	it.numRead++
 	return true
 }

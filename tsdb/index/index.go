@@ -1055,18 +1055,22 @@ type Reader struct {
 	// For the v1 format, labelname -> labelvalue -> offset.
 	postingsV1 map[string]map[string]uint64
 
+	// 符号表
 	symbols     *Symbols
 	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
 
 	dec *Decoder
 
+	// 版本
 	version int
 }
 
 type postingOffset struct {
+	// 取值
 	value string
-	off   int
+	// 在posting，也就是series 表中的偏移量
+	off int
 }
 
 // ByteSlice abstracts a byte slice.
@@ -1467,6 +1471,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
 
+	// v1 版本
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1479,11 +1484,14 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 		return values, nil
 
 	}
+	// 根据label name
 	e, ok := r.postings[name]
 	if !ok {
 		return nil, nil
 	}
+	// 获取该label哪些series中出现了
 	if len(e) == 0 {
+		// 也是直接返回nil
 		return nil, nil
 	}
 	values := make([]string, 0, len(e)*symbolFactor)

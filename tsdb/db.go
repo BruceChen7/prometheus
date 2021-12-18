@@ -900,6 +900,7 @@ func (db *DB) Compact() (returnErr error) {
 	defer db.cmtx.Unlock()
 	defer func() {
 		if returnErr != nil {
+			// 监控统计
 			db.metrics.compactionsFailed.Inc()
 		}
 	}()
@@ -921,12 +922,14 @@ func (db *DB) Compact() (returnErr error) {
 			return nil
 		default:
 		}
-		// 当前的head是否compact
+		// 当前的head是否需要compact
+		// 大于1.5倍的chunk range
 		if !db.head.compactable() {
 			break
 		}
 		// 当前head最小的时间
 		mint := db.head.MinTime()
+		// 计算的最大的时间
 		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
 
 		// Wrap head into a range that bounds all reads to it.

@@ -56,6 +56,7 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
+	// chuan range
 	chunkRange               atomic.Int64
 	numSeries                atomic.Uint64
 	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head.

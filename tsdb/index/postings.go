@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// labels
 var allPostingsKey = labels.Label{}
 
 // AllPostingsKey returns the label key that is used to store the postings list of all existing IDs.
@@ -431,6 +432,7 @@ func ErrPostings(err error) Postings {
 
 // Intersect returns a new postings list over the intersection of the
 // input postings.
+// 返回posting 的交集
 func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
@@ -476,6 +478,7 @@ Loop:
 	}
 }
 
+// 取交集
 func (it *intersectPostings) Next() bool {
 	for _, p := range it.arr {
 		if !p.Next() {
@@ -537,6 +540,7 @@ func (h *postingsHeap) Pop() interface{} {
 }
 
 type mergedPostings struct {
+	// 最小堆
 	h           postingsHeap
 	initialized bool
 	cur         storage.SeriesRef
@@ -589,6 +593,7 @@ func (it *mergedPostings) Next() bool {
 			}
 		} else {
 			// Value of top of heap has changed, re-heapify.
+			// 调整最小堆
 			heap.Fix(&it.h, 0)
 		}
 

@@ -484,9 +484,10 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
-	// 生成一个block
+	// 生成一个uid
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
+	// 设置meta data
 	meta := &BlockMeta{
 		ULID:    uid,
 		MinTime: mint,
@@ -497,6 +498,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
 	if parent != nil {
+		// 记录父block
 		meta.Compaction.Parents = []BlockDesc{
 			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
 		}
@@ -549,10 +551,14 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 
 // write creates a new block that is the union of the provided blocks into dir.
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
+	// 生成mulu
 	dir := filepath.Join(dest, meta.ULID.String())
+	// 临时block dir的目录，用来生成
 	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
 	defer func(t time.Time) {
+		// 用来记录多个err
+		// 用来回收资源
 		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
@@ -563,6 +569,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
+	// 首先清除之前的临时文件
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
 	}
@@ -598,7 +605,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
-	// 资源清理器
+	// 资源清理，放进来
 	closers = append(closers, indexw)
 
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
@@ -671,11 +678,13 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
+	// 没有任何blocker
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
 
 	var (
+		// chunk series set
 		sets        []storage.ChunkSeriesSet
 		symbols     index.StringIter
 		closers     []io.Closer
@@ -691,6 +700,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}()
 	c.metrics.populatingBlocks.Set(1)
 
+	// 获取第1个最大的时间
 	globalMaxt := blocks[0].Meta().MaxTime
 	for i, b := range blocks {
 		select {
@@ -710,18 +720,21 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
+		// 获取b的index文件
 		indexr, err := b.Index()
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %+v", b.Meta())
 		}
 		closers = append(closers, indexr)
 
+		// 获取一个chunk reader
 		chunkr, err := b.Chunks()
 		if err != nil {
 			return errors.Wrapf(err, "open chunk reader for block %+v", b.Meta())
 		}
 		closers = append(closers, chunkr)
 
+		// 获取相关的tombsr
 		tombsr, err := b.Tombstones()
 		if err != nil {
 			return errors.Wrapf(err, "open tombstone reader for block %+v", b.Meta())
@@ -733,6 +746,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err != nil {
 			return err
 		}
+		// sort labels
 		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
 		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, meta.MinTime, meta.MaxTime-1, false))
@@ -762,6 +776,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	if len(sets) > 1 {
 		// Merge series using specified chunk series merger.
 		// The default one is the compacting series merger.
+		// 用来合并
 		set = storage.NewMergeChunkSeriesSet(sets, c.mergeFunc)
 	}
 
@@ -795,7 +810,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := indexw.AddSeries(ref, s.Labels(), chks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
-
+		// 添加chunk
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
 		for _, chk := range chks {
