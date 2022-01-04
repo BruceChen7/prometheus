@@ -989,7 +989,8 @@ func (db *DB) compactHead(head *RangeHead) error {
 		return errors.Wrap(err, "persist head block")
 	}
 
-	// 重新加载mmap中的block
+	// 重新加载mmap中的block，删除delete的block
+	// 注意这里是加载所有
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
 			return tsdb_errors.NewMulti(
@@ -1096,6 +1097,7 @@ func (db *DB) reloadBlocks() (err error) {
 	// crashing towards the end of a compaction but before deletions. By doing that, we can pick up the deletion where it left off during a crash.
 	for _, block := range loadable {
 		if _, ok := deletableULIDs[block.meta.ULID]; ok {
+			// 需要删除的block
 			deletable[block.meta.ULID] = block
 		}
 		for _, b := range block.Meta().Compaction.Parents {
@@ -1107,6 +1109,7 @@ func (db *DB) reloadBlocks() (err error) {
 		}
 	}
 
+	// 还剩余corructed
 	if len(corrupted) > 0 {
 		// Corrupted but no child loaded for it.
 		// Close all new blocks to release the lock for windows.
@@ -1176,7 +1179,9 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
+// 获取所有的block
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+	// 获取block的目录
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "find blocks")
@@ -1755,9 +1760,11 @@ func (db *DB) CleanTombstones() (err error) {
 }
 
 func isBlockDir(fi os.FileInfo) bool {
+	// 不是目录
 	if !fi.IsDir() {
 		return false
 	}
+	// ulid是否是
 	_, err := ulid.ParseStrict(fi.Name())
 	return err == nil
 }

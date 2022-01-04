@@ -798,8 +798,10 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
+	// 第一次
 	initialize := h.MinTime() == math.MaxInt64
 
+	// 不用truncate
 	if h.MinTime() >= mint && !initialize {
 		return nil
 	}
@@ -1152,6 +1154,7 @@ func (h *Head) gc() int64 {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
 	deleted, chunksRemoved, actualMint := h.series.gc(mint)
+	// 用来删除removed series
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1333,9 +1336,10 @@ const (
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
 type stripeSeries struct {
-	size                    int
-	series                  []map[chunks.HeadSeriesRef]*memSeries
-	hashes                  []seriesHashmap
+	size   int
+	series []map[chunks.HeadSeriesRef]*memSeries
+	hashes []seriesHashmap
+	//
 	locks                   []stripeLock
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
@@ -1384,6 +1388,7 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 		for hash, all := range s.hashes[i] {
 			for _, series := range all {
 				series.Lock()
+				// 删除的chunks
 				rmChunks += series.truncateChunksBefore(mint)
 
 				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit {
