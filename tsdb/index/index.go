@@ -324,9 +324,11 @@ func (fw *FileWriter) AddPadding(size int) error {
 }
 
 func (fw *FileWriter) Close() error {
+	// flush之前的buffer
 	if err := fw.Flush(); err != nil {
 		return err
 	}
+	// 同步到磁盘
 	if err := fw.f.Sync(); err != nil {
 		return err
 	}

@@ -209,6 +209,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		if err != nil {
 			return errors.Wrapf(err, "mmap files, file: %s", fn)
 		}
+		// func (f *MmapFile) Close()
 		cdm.closers[seq] = f
 		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
 		chkFileIndices = append(chkFileIndices, seq)
@@ -791,6 +792,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
+		// 找到有重叠部分的文件
 		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
 			break
 		}
@@ -813,17 +815,21 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
 	cdm.readPathMtx.Lock()
 	for _, seq := range removedFiles {
+		// 直接调用 func (f *MmapFile) Close() error {
 		if err := cdm.closers[seq].Close(); err != nil {
 			cdm.readPathMtx.Unlock()
 			return err
 		}
+		// 从map中删除
 		delete(cdm.mmappedChunkFiles, seq)
+		// 删除资源释放的回调函数
 		delete(cdm.closers, seq)
 	}
 	cdm.readPathMtx.Unlock()
 
 	// We actually delete the files separately to not block the readPathMtx for long.
 	for _, seq := range removedFiles {
+		// 直接移除相关的segment的文件
 		if err := os.Remove(segmentFile(cdm.dir.Name(), seq)); err != nil {
 			return err
 		}

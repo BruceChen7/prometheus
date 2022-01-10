@@ -280,6 +280,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 	// can by definition not be affected by any of the given deletes.
 	p.mtx.RLock()
 	for n := range p.m {
+		// 和所有的key
 		keys = append(keys, n)
 	}
 	p.mtx.RUnlock()

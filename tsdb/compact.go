@@ -551,7 +551,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 
 // write creates a new block that is the union of the provided blocks into dir.
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
-	// 生成mulu
+	// 生成ulid block
 	dir := filepath.Join(dest, meta.ULID.String())
 	// 临时block dir的目录，用来生成
 	tmp := dir + tmpForCreationBlockDirSuffix
@@ -808,6 +808,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := chunkw.WriteChunks(chks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
+		// index 中增加series
 		if err := indexw.AddSeries(ref, s.Labels(), chks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}

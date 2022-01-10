@@ -211,7 +211,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.ChunkPool = chunkenc.NewPool()
 	}
 
-	// 返回一个chunk writer
+	// 返回head chunk writer
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
@@ -808,15 +808,19 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// The order of these two Store() should not be changed,
 	// i.e. truncation time is set before in-process boolean.
+	// 上次截断的时间
 	h.lastMemoryTruncationTime.Store(mint)
+	// 正在截断
 	h.memTruncationInProcess.Store(true)
 	defer h.memTruncationInProcess.Store(false)
 
 	// We wait for pending queries to end that overlap with this truncation.
 	if !initialize {
+		// 等待所有的读都读完
 		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
 	}
 
+	// 更新mint
 	h.minTime.Store(mint)
 	h.minValidTime.Store(mint)
 
@@ -828,6 +832,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
 	if initialize {
+		// 初次调用，啥都不干
 		return nil
 	}
 
@@ -836,6 +841,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	actualMint := h.gc()
 	level.Info(h.logger).Log("msg", "Head GC completed", "duration", time.Since(start))
+	// 观察gc 时长
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 	if actualMint > h.minTime.Load() {
 		// The actual mint of the Head is higher than the one asked to truncate.
@@ -852,6 +858,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	}
 
 	// Truncate the chunk m-mapper.
+	// 用来删除小于mint 的series, 并且删除磁盘中的文件
 	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
@@ -875,6 +882,7 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 		})
 		return o
 	}
+	// 如果一直有重复读的，那么等待
 	for overlaps() {
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -1153,8 +1161,9 @@ func (h *Head) gc() int64 {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
+	// 返回delete series
 	deleted, chunksRemoved, actualMint := h.series.gc(mint)
-	// 用来删除removed series
+	// 用来记录删除removed series id
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1169,6 +1178,7 @@ func (h *Head) gc() int64 {
 	h.tombstones.DeleteTombstones(deleted)
 	h.tombstones.TruncateBefore(mint)
 
+	// 用来更新wal
 	if h.wal != nil {
 		_, last, _ := wal.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()
@@ -1294,6 +1304,7 @@ type seriesHashmap map[uint64][]*memSeries
 
 func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	for _, s := range m[hash] {
+		// 获取相关label set
 		if labels.Equal(s.lset, lset) {
 			return s
 		}
@@ -1388,9 +1399,10 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 		for hash, all := range s.hashes[i] {
 			for _, series := range all {
 				series.Lock()
-				// 删除的chunks
+				// 删除mint 的chunks
 				rmChunks += series.truncateChunksBefore(mint)
 
+				// 该series还存在chunk
 				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
@@ -1411,6 +1423,7 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 					s.locks[j].Lock()
 				}
 
+				// 删除该series
 				deleted[storage.SeriesRef(series.ref)] = struct{}{}
 				s.hashes[i].del(hash, series.lset)
 				delete(s.series[j], series.ref)
@@ -1520,9 +1533,11 @@ type memSeries struct {
 	// 对应mmap磁盘中的chunk
 	mmappedChunks []*mmappedChunk
 	mmMaxTime     int64 // Max time of any mmapped chunk, only used during WAL replay.
-	headChunk     *memChunk
-	chunkRange    int64
-	firstChunkID  int
+	// 内存中的head chunk
+	headChunk  *memChunk
+	chunkRange int64
+	// 首个chunk id
+	firstChunkID int
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
@@ -1576,6 +1591,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
 		removed = 1 + len(s.mmappedChunks)
 		s.firstChunkID += removed
+		// 重至这个headchunk
 		s.headChunk = nil
 		s.mmappedChunks = nil
 		return removed
@@ -1588,6 +1604,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 			removed = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removed:]...)
+		// 更新first chunk id
 		s.firstChunkID += removed
 	}
 	return removed

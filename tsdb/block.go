@@ -270,7 +270,8 @@ type Block struct {
 	// We maintain this variable to avoid recalculation every time.
 	symbolTableSize uint64
 
-	chunkr     ChunkReader
+	chunkr ChunkReader
+	// index reader
 	indexr     IndexReader
 	tombstones tombstones.Reader
 
@@ -322,6 +323,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	// 回收资源
 	closers = append(closers, tr)
 
+	// 重新打开一个block，调用mmap加载到内存中
 	pb = &Block{
 		mtx:             sync.RWMutex{},
 		closing:         false,
@@ -349,9 +351,11 @@ func (pb *Block) Close() error {
 	pb.closing = true
 	pb.mtx.Unlock()
 
+	// 等待这些读读完
 	pb.pendingReaders.Wait()
 
 	return tsdb_errors.NewMulti(
+		// 对应的文件进行close
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
@@ -389,6 +393,7 @@ func (pb *Block) startRead() error {
 	if pb.closing {
 		return ErrClosing
 	}
+	// 开始读
 	pb.pendingReaders.Add(1)
 	return nil
 }

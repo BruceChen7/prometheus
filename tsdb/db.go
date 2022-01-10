@@ -174,7 +174,8 @@ type DB struct {
 	blocksToDelete BlocksToDeleteFunc
 
 	// Mutex for that must be held when modifying the general block layout.
-	mtx    sync.RWMutex
+	mtx sync.RWMutex
+	// 当前已经加载的blocks
 	blocks []*Block
 
 	head *Head
@@ -703,6 +704,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
+	// 用来取消写block data
 	db.compactCancel = cancel
 
 	var wlog *wal.WAL
@@ -983,14 +985,14 @@ func (db *DB) CompactHead(head *RangeHead) error {
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	// 用来精简head的大小，写到mm file中
+	// 用来精简head的mmap 文件大小，写到磁盘
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
 	}
 
 	// 重新加载mmap中的block，删除delete的block
-	// 注意这里是加载所有
+	// 注意这里是加载所有有效的block,并且将这些block的chunk mmap到内存中
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
 			return tsdb_errors.NewMulti(
@@ -1000,7 +1002,7 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return errors.Wrap(err, "reloadBlocks blocks")
 	}
-	// 用来截断head中的内存
+	// 用来reset head中的内存, 删除head中之前磁盘的chunk文件
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return errors.Wrap(err, "head memory truncate")
 	}
@@ -1026,6 +1028,7 @@ func (db *DB) compactBlocks() (err error) {
 		default:
 		}
 
+		// 用来精简内存中打开的block
 		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
@@ -1471,6 +1474,7 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
+	// 调用 停止写data block
 	if db.compactCancel != nil {
 		db.compactCancel()
 	}

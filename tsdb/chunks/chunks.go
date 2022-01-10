@@ -658,7 +658,7 @@ func nextSequenceFile(dir string) (string, int, error) {
 	return segmentFile(dir, int(i+1)), int(i + 1), nil
 }
 
-// 用来生成文件的名称
+// 用来生成segment file 文件的名称
 func segmentFile(baseDir string, index int) string {
 	return filepath.Join(baseDir, fmt.Sprintf("%0.6d", index))
 }
