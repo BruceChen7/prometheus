@@ -346,12 +346,14 @@ func (w *WAL) run() {
 Loop:
 	for {
 		select {
+		// 执行回调
 		case f := <-w.actorc:
 			f()
 		case donec := <-w.stopc:
 			// 清理资源
 			close(w.actorc)
 			defer close(donec)
+			// 跳出loop
 			break Loop
 		}
 	}
@@ -542,6 +544,7 @@ func (w *WAL) flushPage(clear bool) error {
 	w.metrics.pageFlushes.Inc()
 
 	p := w.page
+	//是否已经满了
 	clear = clear || p.full()
 
 	// No more data will fit into the page or an implicit clear.
@@ -800,6 +803,7 @@ func (w *WAL) Close() (err error) {
 	}
 
 	donec := make(chan struct{})
+	/// 通知background job 停掉
 	w.stopc <- donec
 	<-donec
 

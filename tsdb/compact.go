@@ -751,6 +751,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		closers = append(closers, tombsr)
 
 		k, v := index.AllPostingsKey()
+		// 获取Postings
 		all, err := indexr.Postings(k, v)
 		if err != nil {
 			return err

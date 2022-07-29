@@ -512,12 +512,14 @@ func (w *Writer) startSymbols() error {
 }
 
 func (w *Writer) AddSymbol(sym string) error {
+	// 添加一个symbol
 	if err := w.ensureStage(idxStageSymbols); err != nil {
 		return err
 	}
 	if w.numSymbols != 0 && sym <= w.lastSymbol {
 		return errors.Errorf("symbol %q out-of-order", sym)
 	}
+	// 写入最后一个symbol
 	w.lastSymbol = sym
 	w.numSymbols++
 	w.buf1.Reset()

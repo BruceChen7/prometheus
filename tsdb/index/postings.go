@@ -47,7 +47,9 @@ var ensureOrderBatchPool = sync.Pool{
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
 type MemPostings struct {
-	mtx     sync.RWMutex
+	mtx sync.RWMutex
+	// 第一层是label name
+	// 第二层是label value
 	m       map[string]map[string][]storage.SeriesRef
 	ordered bool
 }
@@ -70,6 +72,7 @@ func NewUnorderedMemPostings() *MemPostings {
 }
 
 // Symbols returns an iterator over all unique name and value strings, in order.
+// 获取Symbols
 func (p *MemPostings) Symbols() StringIter {
 	p.mtx.RLock()
 
@@ -132,6 +135,7 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
+// 获取labelName 对应的value
 func (p *MemPostings) LabelValues(name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
@@ -280,7 +284,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 	// can by definition not be affected by any of the given deletes.
 	p.mtx.RLock()
 	for n := range p.m {
-		// 和所有的key
+		// 和所有的label name
 		keys = append(keys, n)
 	}
 	p.mtx.RUnlock()
@@ -289,6 +293,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 		p.mtx.RLock()
 		vals = vals[:0]
 		for v := range p.m[n] {
+			// 对应label 的value
 			vals = append(vals, v)
 		}
 		p.mtx.RUnlock()
@@ -302,6 +307,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			found := false
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; ok {
+					// 找到了
 					found = true
 					break
 				}
@@ -320,6 +326,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			if len(repl) > 0 {
 				p.m[n][l] = repl
 			} else {
+				// 从内存中删除
 				delete(p.m[n], l)
 			}
 			p.mtx.Unlock()

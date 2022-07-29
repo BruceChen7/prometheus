@@ -347,6 +347,7 @@ func FromMap(m map[string]string) Labels {
 }
 
 // FromStrings creates new labels from pairs of strings.
+// 创建lables
 func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
