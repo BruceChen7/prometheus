@@ -59,6 +59,7 @@ func (ls Labels) String() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
+		// 给字符串添加""
 		b.WriteString(strconv.Quote(l.Value))
 	}
 	b.WriteByte('}')

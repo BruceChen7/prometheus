@@ -257,6 +257,7 @@ func (a *xorAppender) writeVDelta(v float64) {
 	}
 
 	// 上次的a.leading不为11111
+	// 意思不是第一次
 	// 足够5bit来保存
 	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
 		// 再次写入一个0

@@ -37,6 +37,7 @@ func (es *multiError) Add(errs ...error) {
 		if err == nil {
 			continue
 		}
+
 		if merr, ok := err.(nonNilMultiError); ok {
 			*es = append(*es, merr.errs...)
 			continue

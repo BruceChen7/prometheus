@@ -985,14 +985,14 @@ func (db *DB) CompactHead(head *RangeHead) error {
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	// 用来精简head的mmap 文件大小，写到磁盘
+	// 写到磁盘
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
 	}
 
 	// 重新加载mmap中的block，删除delete的block
-	// 注意这里是加载所有有效的block,并且将这些block的chunk mmap到内存中
+	// 注意这里是加载所有有效的block,并且将这些block的chunk 进行mmap
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
 			return tsdb_errors.NewMulti(

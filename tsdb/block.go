@@ -632,10 +632,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 // Snapshot creates snapshot of the block into dir.
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
+	// 创建目录
 	if err := os.MkdirAll(blockDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot block dir")
 	}
 
+	// 获取chunk dir
 	chunksDir := chunkDir(blockDir)
 	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot chunk dir")
@@ -654,6 +656,7 @@ func (pb *Block) Snapshot(dir string) error {
 
 	// Hardlink the chunks
 	curChunkDir := chunkDir(pb.dir)
+	// 获取files
 	files, err := ioutil.ReadDir(curChunkDir)
 	if err != nil {
 		return errors.Wrap(err, "ReadDir the current chunk dir")

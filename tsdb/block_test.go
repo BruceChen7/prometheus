@@ -547,6 +547,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 		return nil
 	}
 
+	// 创建series
 	series := make([]storage.Series, totalSeries)
 
 	for i := 0; i < totalSeries; i++ {

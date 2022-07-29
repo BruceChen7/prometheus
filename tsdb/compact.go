@@ -348,6 +348,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 
 // CompactBlockMetas merges many block metas into one, combining it's source blocks together
 // and adjusting compaction level.
+// 返回的是合并后的block meta
 func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
@@ -360,9 +361,11 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	maxt := int64(math.MinInt64)
 
 	for _, b := range blocks {
+		// 更新最大时间
 		if b.MaxTime > maxt {
 			maxt = b.MaxTime
 		}
+		// 更新level
 		if b.Compaction.Level > res.Compaction.Level {
 			res.Compaction.Level = b.Compaction.Level
 		}
@@ -375,6 +378,7 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 			MaxTime: b.MaxTime,
 		})
 	}
+	// compaction + 1
 	res.Compaction.Level++
 
 	for s := range sources {
@@ -390,6 +394,7 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
+// 在对应目录中创建block
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
 	var (
 		blocks []BlockReader
@@ -409,6 +414,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 		// Use already open blocks if we can, to avoid
 		// having the index data in memory twice.
+		// 已经在打开的block中找到
 		for _, o := range open {
 			if meta.ULID == o.Meta().ULID {
 				b = o
@@ -431,9 +437,11 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids = append(uids, meta.ULID.String())
 	}
 
+	// 创建一个ulid
 	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := CompactBlockMetas(uid, metas...)
+	// 把block写入
 	err = c.write(dest, meta, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {

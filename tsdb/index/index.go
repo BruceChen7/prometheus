@@ -1071,7 +1071,7 @@ type Reader struct {
 type postingOffset struct {
 	// 取值
 	value string
-	// 在posting，也就是series 表中的偏移量
+	// 在posting offset table中的偏移量，也就是series 表中的偏移量
 	off int
 }
 
@@ -1149,6 +1149,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		return nil, errors.Wrap(err, "read symbols")
 	}
 
+	// v1 版本
 	if r.version == FormatV1 {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
