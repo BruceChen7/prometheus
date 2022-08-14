@@ -44,10 +44,12 @@ type Label struct {
 // label相关的数据结构
 type Labels []Label
 
+// 能够做map的key，必须能比较
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
+// 用来序列化
 func (ls Labels) String() string {
 	var b bytes.Buffer
 

@@ -46,6 +46,7 @@ var ensureOrderBatchPool = sync.Pool{
 // to out of order.
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
+// 一种实现posting的方式
 type MemPostings struct {
 	mtx sync.RWMutex
 	// 第一层是label name
@@ -391,6 +392,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 // ExpandPostings returns the postings expanded as a slice.
+// 用来展开postings
 func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
 	for p.Next() {
 		res = append(res, p.At())
@@ -515,6 +517,7 @@ func (it *intersectPostings) Err() error {
 
 // Merge returns a new iterator over the union of the input iterators.
 func Merge(its ...Postings) Postings {
+	// posting为空
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -522,6 +525,7 @@ func Merge(its ...Postings) Postings {
 		return its[0]
 	}
 
+	// 用来合并
 	p, ok := newMergedPostings(its)
 	if !ok {
 		return EmptyPostings()
@@ -561,9 +565,11 @@ func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
 		if it.Next() {
+			// 直接append
 			ph = append(ph, it)
 		} else {
 			if it.Err() != nil {
+				// 返回错误
 				return &mergedPostings{err: it.Err()}, true
 			}
 		}

@@ -96,6 +96,7 @@ func (s indexWriterStage) String() string {
 var castagnoliTable *crc32.Table
 
 func init() {
+	// 用来初始化crc32
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
@@ -106,8 +107,8 @@ func newCRC32() hash.Hash32 {
 }
 
 type symbolCacheEntry struct {
-	index          uint32
 	lastValue      string
+	index          uint32
 	lastValueIndex uint32
 }
 
@@ -153,15 +154,20 @@ type Writer struct {
 
 // TOC represents index Table Of Content that states where each section of index starts.
 type TOC struct {
-	Symbols           uint64
-	Series            uint64
-	LabelIndices      uint64
+	Symbols uint64
+	Series  uint64
+	// 这个好像已经废弃
+	LabelIndices uint64
+	// 获取label信息，包含来value
 	LabelIndicesTable uint64
-	Postings          uint64
-	PostingsTable     uint64
+	// posting的offset
+	Postings      uint64
+	PostingsTable uint64
 }
 
 // NewTOCFromByteSlice return parsed TOC from given index byte slice.
+//
+//	反序列化
 func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
@@ -191,19 +197,23 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
 func NewWriter(ctx context.Context, fn string) (*Writer, error) {
+	// 目录
 	dir := filepath.Dir(fn)
 
+	// 打开目录
 	df, err := fileutil.OpenDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer df.Close() // Close for platform windows.
 
+	// 移除文件
 	if err := os.RemoveAll(fn); err != nil {
 		return nil, errors.Wrap(err, "remove any existing index at path")
 	}
 
 	// Main index file we are building.
+	// 新的file writer
 	f, err := NewFileWriter(fn)
 	if err != nil {
 		return nil, err
@@ -214,10 +224,13 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		return nil, err
 	}
 	// Temporary file for posting offset table.
+	// writer
 	fPO, err := NewFileWriter(fn + "_tmp_po")
 	if err != nil {
 		return nil, err
 	}
+
+	// 同步, Sync
 	if err := df.Sync(); err != nil {
 		return nil, errors.Wrap(err, "sync dir")
 	}
@@ -255,18 +268,21 @@ func (w *Writer) addPadding(size int) error {
 	return w.f.AddPadding(size)
 }
 
+// 用来写文件
 type FileWriter struct {
 	f    *os.File
 	fbuf *bufio.Writer
-	pos  uint64
 	name string
+	pos  uint64
 }
 
 func NewFileWriter(name string) (*FileWriter, error) {
+	// 读写文件
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		return nil, err
 	}
+	// 返回实例
 	return &FileWriter{
 		f:    f,
 		fbuf: bufio.NewWriterSize(f, 1<<22),
@@ -276,6 +292,7 @@ func NewFileWriter(name string) (*FileWriter, error) {
 }
 
 func (fw *FileWriter) Pos() uint64 {
+	// 写的位置
 	return fw.pos
 }
 
@@ -283,6 +300,7 @@ func (fw *FileWriter) Write(bufs ...[]byte) error {
 	for _, b := range bufs {
 		n, err := fw.fbuf.Write(b)
 		fw.pos += uint64(n)
+		// 返回错误
 		if err != nil {
 			return err
 		}
@@ -290,6 +308,7 @@ func (fw *FileWriter) Write(bufs ...[]byte) error {
 		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
+		// 文件大小不能太大
 		if fw.pos > 16*math.MaxUint32 {
 			return errors.Errorf("%q exceeding max size of 64GiB", fw.name)
 		}
@@ -516,11 +535,13 @@ func (w *Writer) AddSymbol(sym string) error {
 	if err := w.ensureStage(idxStageSymbols); err != nil {
 		return err
 	}
+	// 如果是无序的，那么返回出错
 	if w.numSymbols != 0 && sym <= w.lastSymbol {
 		return errors.Errorf("symbol %q out-of-order", sym)
 	}
 	// 写入最后一个symbol
 	w.lastSymbol = sym
+	// 符号数 + 1
 	w.numSymbols++
 	w.buf1.Reset()
 	w.buf1.PutUvarintStr(sym)
@@ -1407,7 +1428,9 @@ func (s symbolsIter) Err() error { return s.err }
 // ReadOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
 func ReadOffsetTable(bs ByteSlice, off uint64, f func([]string, uint64, int) error) error {
+	// offset处编码
 	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
+	// 开始的位置
 	startLen := d.Len()
 	cnt := d.Be32()
 
@@ -1614,6 +1637,7 @@ func (r *Reader) Series(id storage.SeriesRef, lbls *labels.Labels, chks *[]chunk
 	return errors.Wrap(r.dec.Series(d.Get(), lbls, chks), "read series")
 }
 
+// 从文件中反序列化到内存中
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]

@@ -39,6 +39,7 @@ func (e *Encbuf) Reset()      { e.B = e.B[:0] }
 func (e *Encbuf) Get() []byte { return e.B }
 func (e *Encbuf) Len() int    { return len(e.B) }
 
+// 直接append buffer
 func (e *Encbuf) PutString(s string) { e.B = append(e.B, s...) }
 func (e *Encbuf) PutByte(c byte)     { e.B = append(e.B, c) }
 func (e *Encbuf) PutBytes(b []byte)  { e.B = append(e.B, b...) }
@@ -74,8 +75,11 @@ func (e *Encbuf) PutVarint64(x int64) {
 
 // PutUvarintStr writes a string to the buffer prefixed by its varint length (in bytes!).
 func (e *Encbuf) PutUvarintStr(s string) {
+	// 获取一个指针
 	b := *(*[]byte)(unsafe.Pointer(&s))
+	// 先写长度
 	e.PutUvarint(len(b))
+	// 然后写字符串
 	e.PutString(s)
 }
 
@@ -117,13 +121,18 @@ type Decbuf struct {
 // NewDecbufAt returns a new decoding buffer. It expects the first 4 bytes
 // after offset to hold the big endian encoded content length, followed by the contents and the expected
 // checksum.
+// 用来反序列化
 func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
+	// 剩下的,不足4个字节
 	if bs.Len() < off+4 {
 		return Decbuf{E: ErrInvalidSize}
 	}
+	// 获取4个字节
 	b := bs.Range(off, off+4)
+	// 获取length
 	l := int(binary.BigEndian.Uint32(b))
 
+	// 不足有效长度
 	if bs.Len() < off+4+l+4 {
 		return Decbuf{E: ErrInvalidSize}
 	}
