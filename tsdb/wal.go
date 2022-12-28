@@ -150,7 +150,7 @@ func newCRC32() hash.Hash32 {
 //
 // DEPRECATED: use wal pkg combined with the record coders instead.
 type SegmentWAL struct {
-	mtx     sync.Mutex
+	mtx sync.Mutex
 	// 用于统计
 	metrics *walMetrics
 

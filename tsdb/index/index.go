@@ -173,7 +173,6 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 		return nil, encoding.ErrInvalidSize
 	}
 	b := bs.Range(bs.Len()-indexTOCLen, bs.Len())
-
 	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
 	d := encoding.Decbuf{B: b[:len(b)-4]}
 
@@ -363,6 +362,7 @@ func (fw *FileWriter) Remove() error {
 func (w *Writer) ensureStage(s indexWriterStage) error {
 	select {
 	case <-w.ctx.Done():
+		// 返回错误
 		return w.ctx.Err()
 	default:
 	}

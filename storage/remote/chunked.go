@@ -96,6 +96,7 @@ type ChunkedReader struct {
 	data      []byte
 	sizeLimit uint64
 
+	// 计算crc32
 	crc32 hash.Hash32
 }
 
@@ -138,6 +139,7 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 		return nil, err
 	}
 
+	// 校验和
 	if r.crc32.Sum32() != crc32 {
 		return nil, errors.New("chunkedReader: corrupted frame; checksum mismatch")
 	}

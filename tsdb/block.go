@@ -538,7 +538,6 @@ func (r blockChunkReader) Close() error {
 func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
-
 	if pb.closing {
 		return ErrClosing
 	}
