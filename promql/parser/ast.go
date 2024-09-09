@@ -29,13 +29,12 @@ import (
 // or a chain of function definitions (e.g. String(), PromQLExpr(), etc.) convention is
 // to list them as follows:
 //
-// 	- Statements
-// 	- statement types (alphabetical)
-// 	- ...
-// 	- Expressions
-// 	- expression types (alphabetical)
-// 	- ...
-//
+//   - Statements
+//   - statement types (alphabetical)
+//   - ...
+//   - Expressions
+//   - expression types (alphabetical)
+//   - ...
 type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
@@ -124,6 +123,9 @@ type MatrixSelector struct {
 }
 
 // SubqueryExpr represents a subquery.
+// SubqueryExpr represents a subquery in Prometheus's query language, PromQL.
+// It encapsulates an expression along with additional parameters that define
+// the time range and offset for the subquery.
 type SubqueryExpr struct {
 	Expr  Expr
 	Range time.Duration

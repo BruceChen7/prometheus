@@ -77,6 +77,8 @@ type ExemplarStorage interface {
 
 // A Queryable handles queries against a storage.
 // Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
+// Queryable 处理对存储的查询。
+// 当你需要访问所有样本而无需块编码抽象时使用它，例如在 PromQL 中。
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)

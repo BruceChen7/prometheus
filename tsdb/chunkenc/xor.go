@@ -233,7 +233,6 @@ func bitRange(x int64, nbits uint8) bool {
 	return -((1<<(nbits-1))-1) <= x && x <= 1<<(nbits-1)
 }
 
-//
 func (a *xorAppender) writeVDelta(v float64) {
 	// 进行异或
 	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)

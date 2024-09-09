@@ -24,8 +24,10 @@ type ValueType string
 
 // The valid value types.
 const (
-	ValueTypeNone   ValueType = "none"
+	ValueTypeNone ValueType = "none"
+	// promql 的值类型，向量
 	ValueTypeVector ValueType = "vector"
+	// 标量
 	ValueTypeScalar ValueType = "scalar"
 	ValueTypeMatrix ValueType = "matrix"
 	ValueTypeString ValueType = "string"

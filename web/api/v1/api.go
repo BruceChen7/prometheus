@@ -470,6 +470,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
+	// 获取结果
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
@@ -1622,11 +1623,12 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 }
 
 // marshalExemplarJSON writes.
-// {
-//    labels: <labels>,
-//    value: "<string>",
-//    timestamp: <float>
-// }
+//
+//	{
+//	   labels: <labels>,
+//	   value: "<string>",
+//	   timestamp: <float>
+//	}
 func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*exemplar.Exemplar)(ptr))
 	stream.WriteObjectStart()

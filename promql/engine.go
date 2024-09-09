@@ -380,6 +380,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if err != nil {
 		return nil, err
 	}
+	// 原始的查询字符串
 	qry.q = qs
 
 	return qry, nil
@@ -2606,3 +2607,5 @@ func makeInt64Pointer(val int64) *int64 {
 	*valp = val
 	return valp
 }
+
+// bubble sort for []int{1, 2,3}

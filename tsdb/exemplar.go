@@ -268,6 +268,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	oldBuffer := ce.exemplars
 	oldNextIndex := int64(ce.nextIndex)
 
+
 	ce.exemplars = make([]*circularBufferEntry, l)
 	ce.index = make(map[string]*indexEntry)
 	ce.nextIndex = 0
